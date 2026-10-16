@@ -3,7 +3,7 @@
 - 正本: https://github.com/naokingu123-cloud/anima8-machine （main）
 - 既存公開先: https://ephemeral-dolphin-513496.netlify.app/
 - Netlifyは既存サイトのGitHub連携を使用。main、公開ディレクトリ `.`、ビルド不要。サイトの新規作成や名前変更はしない。
-- 現在版: v45。Google Driveの `Anima8_v45_iPhone_Publish.zip` を展開して反映。
+- 現在版: v46（v45をベースに調整）。Google Driveの `Anima8_v45_iPhone_Publish.zip` を展開して反映。
 - 起動ファイルはルートの `index.html`。Three.js/Cannonを含む自己完結HTML。3Dモデルも物理処理もこの中にある。
 - v44→v45: バージョン表示更新、JPC説明を実際の1秒間隔に修正、星の点滅周波数を1.7→0.85に変更。モデル・物理処理は同一。
 
@@ -18,3 +18,7 @@ mainへ通常コミットで更新し、既存URLで反映を確認する。認�
 ## v45確認
 
 元ZIPの4ファイルをバイト単位で維持。v44とのindex.html差分は上記3か所のみ。
+
+## v46
+
+黄色円盤の中央側の段差 hubStep を 0.035→0.115（+0.08モデル単位、球直径の約17%）に変更。hubHeightを共有する描画とinnerWall当たり判定を同時に上げ、中央側にボールが乗り込みにくくする。外側は既存の滑らかなブレンドを維持。番号ポケットと外周形状は維持。JavaScript構文確認済み。操作用ブラウザではWebGL非対応のため実動作は未確認。

@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v45 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v46 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -66198,7 +66198,7 @@ const CONTACT={stopperBounce:.02,stopperFriction:.035,pocketBounce:.32,pocketFri
 function bowlHeight(r){const t=Math.max(0,Math.min(1,(r-DIM.inner)/(DIM.outer-DIM.inner)));return .204*t+.391*t*t;}
 // Shallow inter-pocket flats keep the ball near the mouth while the fixed
 // prism arrests its tangential motion. The lower third remains steeper and scooped.
-const PROFILE={upperSlope:-.01,lowerSlope:-.02,transitionCenter:DIM.pocket+DIM.hole/3,transitionWidth:.10,hubStep:.035,lip:.012,scoop:.034,edgeBand:.09,lowerBand:.20};
+const PROFILE={upperSlope:-.01,lowerSlope:-.02,transitionCenter:DIM.pocket+DIM.hole/3,transitionWidth:.10,hubStep:.115,lip:.012,scoop:.034,edgeBand:.09,lowerBand:.20};
 const clamp01=x=>Math.max(0,Math.min(1,x));
 const smooth01=x=>{x=clamp01(x);return x*x*(3-2*x);};
 function profileIntegral(r){
