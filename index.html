@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v44 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v45 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -67075,7 +67075,7 @@ function startAnima8(){
   const running=draw.state==='running',eight=draw.mode==='eight',jpc=draw.mode==='jpc',start=el('[data-action=start]');
   start.disabled=((eight||jpc)&&running)||draw.state==='draining';
   start.textContent=running?(jpc?'JPC抽選中 · 70球':eight?'8球抽選中':'投入を止める'):(jpc?'70球JPCを開始':eight?'8球抽選を開始':'連続抽選を開始');
-  el('[data-mode-detail]').textContent=jpc?'70球を2秒間隔で発射。入賞球はすぐ回収し、各ポケットの星色が入賞回数で変わります':eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
+  el('[data-mode-detail]').textContent=jpc?'70球を1秒間隔で発射。入賞球はすぐ回収し、各ポケットの星色が入賞回数で変わります':eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
   el('.a8-jpc-legend').hidden=!jpc;el('.a8-jpc-meter').hidden=!jpc;
   if(draw.state==='ready')status.textContent=jpc?'JPC待機中 · 25ポケットの星が白く点滅':'抽選開始を押してください';
   if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?'70球JPCが終了しました':eight?'8球の抽選が終了しました':'連続抽選を停止しました';
@@ -67111,7 +67111,7 @@ function startAnima8(){
    if(draw.mode==='jpc'){
     // Star silhouettes blink, while their hue is fixed by real per-pocket hit counts.
     const n=jpcCounts[i],tint=jpcTints[Math.min(n,5)];
-    const wave=.5+.5*Math.sin(physics.time*TAU*1.7-(n===0?0:i*.19));
+    const wave=.5+.5*Math.sin(physics.time*TAU*.85-(n===0?0:i*.19));
     const pulse=.12+.88*wave*wave;
     p.material.uniforms.lightTint.value.copy(tint);
     p.scatter.uniforms.lightTint.value.copy(tint);
