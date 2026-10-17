@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v53 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v54 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -66737,7 +66737,23 @@ const STAR_CELLS=(()=>{
 })();
 function starPixels(){return STAR_CELLS;}
 
-return {PANEL_SIZE,numberPixels,starPixels};
+// The center LCD uses the same digit glyphs, with room for a five-character counter.
+const COUNTER_SIZE=48;
+function counterPixels(count,total=70){
+ const text=`${Math.max(0,Math.min(total,Math.floor(count)))}/${total}`;
+ const cells=new Uint8Array(COUNTER_SIZE*COUNTER_SIZE),widths=[...text].map(c=>c==='/'?6:c==='1'?4:8);
+ let left=Math.floor((COUNTER_SIZE-widths.reduce((a,b)=>a+b,0)-(text.length-1))/2);
+ for(let i=0;i<text.length;i++){
+  const glyph=text[i],width=widths[i];
+  for(let y=0;y<14;y++)for(let x=0;x<width;x++){
+   const lit=glyph==='/'?Math.abs(x-(5-y*5/13))<.9:!!(DIGIT_ROWS[Number(glyph)][y]&(1<<(7-(glyph==='1'?x+2:x))));
+   if(lit)cells[(17+y)*COUNTER_SIZE+left+x]=1;
+  }
+  left+=width+1;
+ }
+ return cells;
+}
+return {PANEL_SIZE,numberPixels,starPixels,COUNTER_SIZE,counterPixels};
 })();
 
 const LIGHTS=(()=>{
@@ -66762,7 +66778,7 @@ return {slopeLightRGB};
 
 const {RoulettePhysics,DIM,TAU,polar,lathe,bowlHeight,deckHeight,hubHeight,STOPPERS,stopperMesh}=PHYSICS;
 const {DrawController}=DRAW;
-const {PANEL_SIZE,numberPixels,starPixels}=PIXELS;
+const {PANEL_SIZE,numberPixels,starPixels,COUNTER_SIZE,counterPixels}=PIXELS;
 const {slopeLightRGB}=LIGHTS;
 // Original rendered MP3 soundtrack and Japanese speech; gesture-driven media playback.
 function createJpcAudio(root){
@@ -67122,11 +67138,11 @@ function startAnima8(){
   const canvas=document.createElement('canvas');canvas.width=PANEL_SIZE;canvas.height=PANEL_SIZE;
   const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.magFilter=THREE.LinearFilter;texture.minFilter=THREE.LinearFilter;texture.generateMipmaps=false;
   const faceMat=new THREE.ShaderMaterial({
-   uniforms:{cellTexture:{value:texture},brightness:{value:1},flash:{value:0},lightTint:{value:new THREE.Color(1,1,1)}},
+   uniforms:{cellTexture:{value:texture},gridSize:{value:PANEL_SIZE},brightness:{value:1},flash:{value:0},lightTint:{value:new THREE.Color(1,1,1)}},
    vertexShader:`varying vec2 panelUV;void main(){panelUV=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-   fragmentShader:`uniform sampler2D cellTexture;uniform float brightness;uniform float flash;uniform vec3 lightTint;varying vec2 panelUV;
-    void main(){vec2 grid=clamp(panelUV,0.0,0.999999)*20.0;vec2 local=fract(grid)-0.5;
-     vec3 cell=texture2D(cellTexture,(floor(grid)+0.5)/20.0).rgb;
+   fragmentShader:`uniform sampler2D cellTexture;uniform float gridSize;uniform float brightness;uniform float flash;uniform vec3 lightTint;varying vec2 panelUV;
+    void main(){vec2 grid=clamp(panelUV,0.0,0.999999)*gridSize;vec2 local=fract(grid)-0.5;
+     vec3 cell=texture2D(cellTexture,(floor(grid)+0.5)/gridSize).rgb;
      float r2=dot(local,local),digit=step(0.5,max(cell.r,max(cell.g,cell.b)));
      // Keep each LED cell crisp; scattering lives on the cover above.
      float lens=0.012+0.52*exp(-20.0*r2)+0.34*exp(-7.0*r2)+0.128*exp(-85.0*r2);
@@ -67156,6 +67172,51 @@ function startAnima8(){
   const scattered=mesh(g.clone().translate(0,.068,0),scatterMat,group);scattered.name='Acrylic digit light scatter';scattered.renderOrder=3;
   panels.push({green:false,ctx:canvas.getContext('2d'),texture,material:faceMat,scatter:scatterMat});drawPanel(i);
  }
+ // A thin round LCD sits above the existing clear column; it adds no collision body.
+ // Clone the actual pocket shaders so the LED lenses, brightness and cover glow match.
+ const centerDisplay=new THREE.Group();centerDisplay.name='Round central JPC LCD';
+ centerDisplay.position.set(0,columnProfile[columnProfile.length-1][1]+.30,0);
+ centerDisplay.rotation.order='YXZ';centerDisplay.rotation.x=-Math.PI/2+.44;scene.add(centerDisplay);
+ const centerCanvas=document.createElement('canvas');centerCanvas.width=COUNTER_SIZE;centerCanvas.height=COUNTER_SIZE;
+ const centerContext=centerCanvas.getContext('2d'),centerTexture=new THREE.CanvasTexture(centerCanvas);
+ centerTexture.colorSpace=THREE.SRGBColorSpace;centerTexture.magFilter=THREE.LinearFilter;centerTexture.minFilter=THREE.LinearFilter;centerTexture.generateMipmaps=false;
+ const centerFace=panels[0].material.clone(),centerScatter=panels[0].scatter.clone();
+ centerFace.uniforms.cellTexture.value=centerTexture;centerFace.uniforms.gridSize.value=COUNTER_SIZE;
+ centerScatter.uniforms.cellTexture.value=centerTexture;materials.push(centerFace,centerScatter);
+ const centerBack=mesh(new THREE.CylinderGeometry(1.10,1.10,.08,96),dark,centerDisplay,[0,0,-.045]);centerBack.rotation.x=Math.PI/2;
+ mesh(new THREE.TorusGeometry(1.075,.025,8,96),bezelMat,centerDisplay).name='Circular LCD bezel';
+ mesh(new THREE.CircleGeometry(1.05,96),centerFace,centerDisplay).name='Central counter LED face';
+ const centerCover=mesh(new THREE.CircleGeometry(1.05,96),coverMat,centerDisplay,[0,0,.025]);centerCover.renderOrder=2;
+ const centerScattered=mesh(new THREE.CircleGeometry(1.05,96),centerScatter,centerDisplay,[0,0,.040]);centerScattered.renderOrder=3;
+ let centerCounterText=null;
+ function updateCenterCounter(){
+  const active=draw.mode==='jpc',count=Math.max(0,Math.min(70,physics.serial)),text=active?`${count}/70`:'';
+  if(text===centerCounterText)return;
+  centerCounterText=text;centerDisplay.userData.counter=text;centerDisplay.userData.progress=active?count/70:0;
+  centerContext.imageSmoothingEnabled=false;centerContext.fillStyle='#101a24';centerContext.fillRect(0,0,COUNTER_SIZE,COUNTER_SIZE);
+  if(active){
+   // A clockwise pie starts at twelve o'clock, behind the white counter digits.
+   centerContext.fillStyle='#16727c';
+   for(let y=0;y<COUNTER_SIZE;y++)for(let x=0;x<COUNTER_SIZE;x++){
+    const dx=x+.5-COUNTER_SIZE/2,dy=y+.5-COUNTER_SIZE/2,angle=(Math.atan2(dx,-dy)+TAU)%TAU;
+    if(dx*dx+dy*dy<=COUNTER_SIZE*COUNTER_SIZE/4&&angle<TAU*count/70)centerContext.fillRect(x,y,1,1);
+   }
+   const cells=counterPixels(count);
+   centerContext.fillStyle='#101a24';
+   for(let y=0;y<COUNTER_SIZE;y++)for(let x=0;x<COUNTER_SIZE;x++)if(cells[y*COUNTER_SIZE+x])centerContext.fillRect(x-1,y-1,3,3);
+   centerContext.fillStyle='#ffffff';
+   for(let y=0;y<COUNTER_SIZE;y++)for(let x=0;x<COUNTER_SIZE;x++)if(cells[y*COUNTER_SIZE+x])centerContext.fillRect(x,y,1,1);
+  }
+  centerTexture.needsUpdate=true;
+  renderer.domElement.setAttribute('role','img');renderer.domElement.setAttribute('aria-label',active?`抽選機・中央液晶 ${text} 球発射`:'抽選機');
+ }
+ function updateCenterLight(){
+  const active=draw.mode==='jpc',pulse=active&&physics.serial===0?.10+.90*(.5+.5*Math.cos(physics.time*TAU/3)):1;
+  centerFace.uniforms.brightness.value=brightness*(active?1.90:.28)*pulse;
+  centerScatter.uniforms.brightness.value=brightness*(active?1.75:.28)*pulse;
+  centerFace.uniforms.flash.value=0;centerScatter.uniforms.flash.value=0;
+ }
+ updateCenterCounter();
  const stopperMat=new THREE.MeshPhysicalMaterial({color:'#dfedff',transparent:true,opacity:.29,roughness:.08,metalness:.22,side:THREE.DoubleSide,depthWrite:false});materials.push(stopperMat);
  const stopperEdgeMat=new THREE.LineBasicMaterial({color:'#d5e2ee',transparent:true,opacity:.6});materials.push(stopperEdgeMat);
  for(const s of STOPPERS){
@@ -67181,7 +67242,7 @@ function startAnima8(){
  const rim=new THREE.PointLight(0x915aff,24,9,2);rim.position.set(0,2.4,1.5);scene.add(rim);
  const ground=mesh(new THREE.CircleGeometry(8,80),new THREE.ShadowMaterial({opacity:.2}),scene,[0,-2.05,0]);ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;
 
- function applyCamera(){const a=yaw,e=elevation*Math.PI/180,d=distance*Math.max(1,1.28/aspect);camera.position.set(target.x+Math.sin(a)*Math.cos(e)*d,target.y+Math.sin(e)*d,target.z-Math.cos(a)*Math.cos(e)*d);camera.lookAt(target);}
+ function applyCamera(){centerDisplay.rotation.y=Math.PI-yaw;const a=yaw,e=elevation*Math.PI/180,d=distance*Math.max(1,1.28/aspect);camera.position.set(target.x+Math.sin(a)*Math.cos(e)*d,target.y+Math.sin(e)*d,target.z-Math.cos(a)*Math.cos(e)*d);camera.lookAt(target);}
  function resize(){const width=stage.clientWidth,height=stage.clientHeight;aspect=width/height;camera.aspect=aspect;camera.updateProjectionMatrix();renderer.setSize(width,height,false);applyCamera();}
  const observer=new ResizeObserver(resize);observer.observe(stage);resize();
  const pointers=new Map();let lastPinch=0;
@@ -67198,6 +67259,7 @@ function startAnima8(){
 
  const grid=el('.a8-pocket-grid');for(let i=1;i<=25;i++){const span=document.createElement('span');span.textContent=i;span.setAttribute('aria-label',`${i}番 未入賞`);grid.append(span);}
  function updateCount(){
+  updateCenterCounter();
   el('[data-count]').textContent=draw.mode==='jpc'?`JPC 入賞 ${physics.hits.length} / 発射 ${physics.serial} / 70`:`入賞 ${physics.hits.length} / 投入 ${physics.serial}`;
   const meter=el('.a8-jpc-meter');meter.setAttribute('aria-valuenow',String(physics.serial));
   el('[data-jpc-progress]').textContent=`ROUND ${jpcRound()+1} / 4 · ${physics.serial} / 70 球 発射 · ${jpcFilledCount()} / 25 ポケット`;
@@ -67298,7 +67360,7 @@ function startAnima8(){
     p.scatter.uniforms.brightness.value=brightness*1.35*shimmer;p.scatter.uniforms.flash.value=flash?1:0;
    }
   });
-  updateSlopeLights();centerGlow.material.opacity=.36+.03*Math.sin(physics.time*2);pinkLED.color.setScalar(brightness);haloMat.uniforms.strength.value=brightness;renderer.render(scene,camera);frame=requestAnimationFrame(render);
+  updateCenterLight();updateSlopeLights();centerGlow.material.opacity=.36+.03*Math.sin(physics.time*2);pinkLED.color.setScalar(brightness);haloMat.uniforms.strength.value=brightness;renderer.render(scene,camera);frame=requestAnimationFrame(render);
  }
  el('.a8-loading').hidden=true;updateDrawControls();frame=requestAnimationFrame(render);
  renderer.domElement.addEventListener('webglcontextlost',event=>{event.preventDefault();setPaused(true);el('.a8-loading').hidden=false;el('.a8-loading').textContent='描画が中断しました。ページを開き直してください。';});
@@ -67306,7 +67368,7 @@ function startAnima8(){
  root.anima8={physics,draw,scene,setPaused,start:startOrStop,reset:()=>draw.reset(),
   get jpcCounts(){return [...jpcCounts];},
   get status(){return status.textContent;}};
- const cleanup=new MutationObserver(()=>{if(!root.isConnected){disposed=true;jpcAudio.dispose();cancelAnimationFrame(frame);observer.disconnect();cleanup.disconnect();renderer.dispose();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();});materials.forEach(m=>m.dispose());panels.forEach(p=>p.texture.dispose());}});cleanup.observe(document.documentElement,{childList:true,subtree:true});
+ const cleanup=new MutationObserver(()=>{if(!root.isConnected){disposed=true;jpcAudio.dispose();cancelAnimationFrame(frame);observer.disconnect();cleanup.disconnect();renderer.dispose();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();});materials.forEach(m=>m.dispose());panels.forEach(p=>p.texture.dispose());centerTexture.dispose();}});cleanup.observe(document.documentElement,{childList:true,subtree:true});
 }
 
 </script><script>
