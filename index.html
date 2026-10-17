@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v49 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v50 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -99,7 +99,7 @@
     <div class="a8-jpc-legend" hidden aria-label="JPCの入賞回数ごとの星の色">
      <span><b style="color:#ffffff">★</b>0球</span><span><b style="color:#358bff">★</b>1球</span>
      <span><b style="color:#52ff7a">★</b>2球</span><span><b style="color:#ffe438">★</b>3球</span>
-     <span><b style="color:#d4b0ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球以上</span><span>24ポケット入賞：リーチ（残りマスが虹）</span><span>全25ポケット入賞：JACKPOT</span>
+     <span><b style="color:#9b18ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球以上</span><span>24ポケット入賞：リーチ（残りマスが虹）</span><span>全25ポケット入賞：JACKPOT</span>
     </div></div>
    <button type="button" class="a8-primary a8-start" data-action="start">8球抽選を開始</button>
    <div class="a8-jpc-meter" hidden aria-label="JPCの70球発射進捗" role="progressbar" aria-valuemin="0" aria-valuemax="70" aria-valuenow="0"><div class="a8-jpc-track"><div data-jpc-fill></div></div><span data-jpc-progress>0 / 70 球 発射</span></div>
@@ -66775,7 +66775,7 @@ function startAnima8(){
  let yaw=Math.PI,elevation=24,distance=17.1,aspect=1,paused=false,rate=1,brightness=1.2,disposed=false;
  const target=new THREE.Vector3(0,.10,0),rotor=new THREE.Group();scene.add(rotor);
  const panels=[],ballViews=new Map(),hitTimes=Array(25).fill(-100),jpcCounts=Array(25).fill(0);
- const JPC_COLORS=['#ffffff','#358bff','#52ff7a','#ffe438','#d4b0ff','#ff4141'];
+ const JPC_COLORS=['#ffffff','#358bff','#52ff7a','#ffe438','#9b18ff','#ff4141'];
  const jpcTints=JPC_COLORS.map(x=>new THREE.Color(x));
  // Reach: 24 distinct occupied pockets; jackpot: all 25 occupied.
  function jpcFilledCount(){return jpcCounts.reduce((n,count)=>n+(count>0?1:0),0);}
@@ -66854,6 +66854,7 @@ function startAnima8(){
   ledDummy.updateMatrix();halos.setMatrixAt(k,ledDummy.matrix);halos.setColorAt(k,color);
  }scene.add(warmLEDs,halos);
  warmLEDs.name='Animated outer slope LEDs';halos.name='Animated outer slope halos';
+ const celebrationGold=new THREE.Color('#ffe34b'),reachGold=new THREE.Color('#ffc62c');
  const slopeColor=new THREE.Color(),slopeRGB=[0,0,0];let slopeStarted=0,slopeStopped=0;
  function updateSlopeLights(){
   if(draw.mode==='jpc'){
@@ -66866,8 +66867,18 @@ function startAnima8(){
     const speed=.14+round*.095,fan=.5+.5*Math.cos(TAU*(u*(round+1)-t*speed+r*.22));
     const chase=Math.pow(Math.max(0,Math.cos(TAU*(r-t*(.55+round*.28)+u*(round+1)))),6-round);
     const sparkle=round>1?Math.pow(Math.max(0,Math.sin(i*7.1+c*3.7+j*2.3+t*(4+round))),18)*.35:0;
-    if(reach){slopeColor.setRGB(1,.006,.012).multiplyScalar(1.5+.7*Math.sin(t*TAU*1.5)**2);}
-    else{
+    if(jackpotPocket>=0){
+     const burst=Math.pow(.5+.5*Math.cos(TAU*(r*1.7-t*1.25+u*3)),3);
+     const gold=Math.pow(.5+.5*Math.sin(TAU*(u*5+t*.8-r*.4)),5);
+     slopeColor.setHSL((u*2+r*.5-t*.38+1)%1,.92,.38+burst*.20);
+     slopeColor.lerp(celebrationGold,gold*.80).multiplyScalar(1.8+burst*.9);
+    }else if(reach){slopeColor.setRGB(1,.006,.012).multiplyScalar(1.5+.7*Math.sin(t*TAU*1.5)**2);}
+    else if(reachIndex>=0){
+     const sweep=.5+.5*Math.cos(TAU*(u*3-t*.65+r*.25));
+     const wave=Math.pow(.5+.5*Math.cos(TAU*(r-t*1.1+u*2)),4);
+     slopeColor.setHSL(.77+sweep*.13,.95,.30+wave*.22);
+     slopeColor.lerp(reachGold,Math.pow(sweep,8)*.7).multiplyScalar(1.5+wave*.7);
+    }else{
      const hue=jackpotPocket>=0?u+r*.3-t*.35:round===0?.58+fan*.08:round===1?.39+fan*.22:round===2?.10+fan*.54:u+r*.35-t*.24;
      slopeColor.setHSL(((hue%1)+1)%1,.94,.28+fan*(.07+round*.025)+chase*.25+sparkle*.16);
      slopeColor.multiplyScalar(active?1.25+round*.18+(.12+.06*round)*Math.sin(t*TAU*.75)**2:.35);
@@ -66973,7 +66984,24 @@ function startAnima8(){
  for(let i=0;i<12;i++)box([.008,.28,.008],polar(.275,i*TAU/12,discY+.20),columnLED,rotor,i*TAU/12);
  const centerGlow=mesh(new THREE.CircleGeometry(.49,48),new THREE.MeshBasicMaterial({color:'#5979ff',transparent:true,opacity:.38,depthWrite:false,toneMapped:false}),rotor,[0,discY+.004,0]);centerGlow.rotation.x=-Math.PI/2;
 
+ // Moving fireworks and upward gold ribbons replace stars after jackpot.
+ function drawCelebrationPanel(i){
+  const p=panels[i],ctx=p.ctx,t=physics.time;
+  ctx.fillStyle='#111';ctx.fillRect(0,0,PANEL_SIZE,PANEL_SIZE);
+  const phase=t*.7+i*.137,burst=phase-Math.floor(phase),cx=6+(i*7%9),cy=7+(i*3%7);
+  for(let k=0;k<10;k++){
+   const a=k*TAU/10,r=1+burst*10,x=Math.round(cx+Math.cos(a)*r),y=Math.round(cy+Math.sin(a)*r);
+   ctx.fillStyle=`hsl(${(i*29+k*24+t*120)%360},100%,65%)`;ctx.fillRect(x,y,2,2);
+   if(burst>.35)ctx.fillRect(Math.round(cx+Math.cos(a)*(r-2)),Math.round(cy+Math.sin(a)*(r-2)),1,1);
+  }
+  for(let k=0;k<4;k++){
+   const x=(i*3+k*5)%20,y=((18-t*9-k*4)%24+24)%24-2;
+   ctx.fillStyle=k%2?'#ffdd27':'#fff2b0';ctx.fillRect(x,Math.round(y),2,3);
+  }
+  p.texture.needsUpdate=true;
+ }
  function drawPanel(i){
+  if(draw.mode==='jpc'&&jackpotPocket>=0&&!jpcLetter(i)){drawCelebrationPanel(i);return;}
   const p=panels[i],ctx=p.ctx,letter=draw.mode==='jpc'?jpcLetter(i):'',cells=draw.mode==='jpc'?starPixels():numberPixels(i+1);
   if(letter){
    const glyphs={J:['00111','00010','00010','00010','10010','10010','01100'],A:['01110','10001','10001','11111','10001','10001','10001'],C:['01111','10000','10000','10000','10000','10000','01111'],K:['10001','10010','10100','11000','10100','10010','10001'],P:['11110','10001','10001','11110','10000','10000','10000'],O:['01110','10001','10001','10001','10001','10001','01110'],T:['11111','00100','00100','00100','00100','00100','00100']};
@@ -67107,7 +67135,7 @@ function startAnima8(){
   for(const view of ballViews.values()){scene.remove(view.mesh,view.trail);view.mesh.geometry.dispose();view.trail.geometry.dispose();view.trail.material.dispose();}
   ballViews.clear();hitTimes.fill(-100);jpcCounts.fill(0);jackpotPocket=-1;jackpotLetters.clear();
   results.replaceChildren();const span=document.createElement('span');span.className='a8-empty';span.textContent='入賞した番号がここに並びます';results.append(span);
-  for(let i=0;i<25;i++){updatePocketBadge(i);drawPanel(i);panels[i].green=null;}
+  for(let i=0;i<25;i++){updatePocketBadge(i);drawPanel(i);panels[i].green=null;panels[i].celebrationFrame=-1;}
   updateCount();
  }
  function updateDrawControls(){
@@ -67148,25 +67176,29 @@ function startAnima8(){
   physics.balls=physics.balls.filter(b=>!b.dead);
   panels.forEach((p,i)=>{
    if(draw.mode==='jpc'){
-    // Star silhouettes blink, while their hue is fixed by real per-pocket hit counts.
-    const n=jpcCounts[i],rainbow=i===jpcReachPocket()||jackpotLetters.has(i),tint=rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
+    // Occupied pockets stay continuously lit; only empty pockets pulse.
+    const n=jpcCounts[i],rainbow=i===jpcReachPocket()||jackpotLetters.has(i),tint=jackpotPocket>=0&&!jackpotLetters.has(i)?jpcRainbow.setRGB(1,1,1):rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
     const wave=.5+.5*Math.sin(physics.time*TAU*.85-(n===0?0:i*.19));
-    const pulse=rainbow?.65+.35*wave:.12+.88*wave*wave;
+    const pulse=n>0||rainbow?1:.40+.60*wave*wave;
+    if(jackpotPocket>=0&&!jpcLetter(i)){
+     const animationFrame=Math.floor(physics.time*10);
+     if(p.celebrationFrame!==animationFrame){p.celebrationFrame=animationFrame;drawCelebrationPanel(i);}
+    }
     p.material.uniforms.lightTint.value.copy(tint);
     p.scatter.uniforms.lightTint.value.copy(tint);
-    p.material.uniforms.brightness.value=brightness*(rainbow?1.85:1.35)*pulse;
-    p.scatter.uniforms.brightness.value=brightness*(rainbow?1.75:1.30)*pulse;
-    p.material.uniforms.flash.value=wave>.8?0.5:0;
+    p.material.uniforms.brightness.value=brightness*(rainbow?2.25:1.90)*pulse;
+    p.scatter.uniforms.brightness.value=brightness*(rainbow?2.05:1.75)*pulse;
+    p.material.uniforms.flash.value=0;
     p.scatter.uniforms.flash.value=0;
     innerLights[i].color.copy(tint).multiplyScalar(brightness);
-    innerLights[i].opacity=.18+.67*pulse;
+    innerLights[i].opacity=.32+.63*pulse;
    }else{
-    const recent=physics.time-hitTimes[i]<2,flash=recent&&Math.sin(physics.time*22)>0,green=hitTimes[i]>-100;
+    const flash=false,green=hitTimes[i]>-100;
     if(p.green!==green){p.green=green;p.material.uniforms.lightTint.value.setRGB(green?.035:1,1,green?.13:1);p.scatter.uniforms.lightTint.value.copy(p.material.uniforms.lightTint.value);}
-    const shimmer=1+.025*Math.sin(physics.time*3.1+i*1.73)+.012*Math.sin(physics.time*7.7+i*.81);
-    p.material.uniforms.brightness.value=brightness*.92*shimmer;p.material.uniforms.flash.value=flash?1:0;
+    const shimmer=1;
+    p.material.uniforms.brightness.value=brightness*1.35*shimmer;p.material.uniforms.flash.value=flash?1:0;
     innerLights[i].color.set(green?'#35ff93':'#f4faff').multiplyScalar(brightness);innerLights[i].opacity=.85;
-    p.scatter.uniforms.brightness.value=brightness*.92*shimmer;p.scatter.uniforms.flash.value=flash?1:0;
+    p.scatter.uniforms.brightness.value=brightness*1.35*shimmer;p.scatter.uniforms.flash.value=flash?1:0;
    }
   });
   updateSlopeLights();centerGlow.material.opacity=.36+.03*Math.sin(physics.time*2);pinkLED.color.setScalar(brightness);haloMat.uniforms.strength.value=brightness;renderer.render(scene,camera);frame=requestAnimationFrame(render);
