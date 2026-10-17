@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v51 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v52 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -104,6 +104,12 @@
    <button type="button" class="a8-primary a8-start" data-action="start">8球抽選を開始</button>
    <div class="a8-jpc-meter" hidden aria-label="JPCの70球発射進捗" role="progressbar" aria-valuemin="0" aria-valuemax="70" aria-valuenow="0"><div class="a8-jpc-track"><div data-jpc-fill></div></div><span data-jpc-progress>0 / 70 球 発射</span></div>
    <div class="a8-actions"><button type="button" data-action="pause" aria-pressed="false">一時停止</button><button type="button" data-action="reset">リセット</button></div>
+   <section class="a8-audio" aria-label="JPCの音声とBGM" style="padding:10px;border:1px solid var(--a8-line);border-radius:9px;display:grid;gap:8px">
+    <div style="display:flex;flex-wrap:wrap;gap:12px"><label class="a8-check"><input type="checkbox" id="a8-voice" checked>実況ボイス</label><label class="a8-check"><input type="checkbox" id="a8-bgm" checked>BGM</label></div>
+    <label for="a8-volume">音量 <input id="a8-volume" type="range" min="0" max="100" value="65" style="width:65%;vertical-align:middle"></label>
+    <button type="button" data-audio-test>音声テスト ♪</button>
+    <small data-audio-hint style="line-height:1.5;color:var(--a8-muted)"></small>
+   </section>
     <label class="a8-check"><input type="checkbox" id="a8-trails">ボールの軌跡</label>
    <div class="a8-pocket-grid" aria-label="各ポケットの入賞状態"></div>
   </aside>
@@ -66757,7 +66763,95 @@ const {RoulettePhysics,DIM,TAU,polar,lathe,bowlHeight,deckHeight,hubHeight,STOPP
 const {DrawController}=DRAW;
 const {PANEL_SIZE,numberPixels,starPixels}=PIXELS;
 const {slopeLightRGB}=LIGHTS;
+// Original synthesized music and Japanese speech; no external audio downloads.
+function createJpcAudio(root){
+ const q=s=>root.querySelector(s),voiceBox=q('#a8-voice'),musicBox=q('#a8-bgm'),volume=q('#a8-volume'),hint=q('[data-audio-hint]');
+ const synth=window.speechSynthesis,speechOK=!!(synth&&window.SpeechSynthesisUtterance),AudioCtor=window.AudioContext||window.webkitAudioContext;
+ let ctx=null,master=null,timer=null,next=0,step=0,mode='off',round=0,paused=false,ducked=false,utterance=null,previewTimer=null;
+ const nodes=new Set(),said=new Set();
+ function level(){return Number(volume.value)/100;}
+ function gain(){if(master&&ctx)master.gain.setTargetAtTime(musicBox.checked&&!paused?level()*(ducked?.22:1)*.26:0,ctx.currentTime,.06);}
+ function clearNotes(){for(const n of nodes){try{n.stop();}catch{}}nodes.clear();}
+ function ensure(){
+  if(!AudioCtor)return false;
+  if(!ctx){ctx=new AudioCtor();master=ctx.createGain();master.gain.value=0;master.connect(ctx.destination);}
+  ctx.resume().catch(()=>{hint.textContent='音が出ない場合は「音声テスト」を押してください';});gain();return true;
+ }
+ function tone(note,time,duration,type='triangle',strength=.15){
+  if(!ctx||note===null)return;
+  const osc=ctx.createOscillator(),g=ctx.createGain();osc.type=type;osc.frequency.value=440*Math.pow(2,(note-69)/12);
+  g.gain.setValueAtTime(0,time);g.gain.linearRampToValueAtTime(strength,time+.012);g.gain.exponentialRampToValueAtTime(.0001,time+duration);
+  osc.connect(g);g.connect(master);nodes.add(osc);osc.onended=()=>{nodes.delete(osc);osc.disconnect();g.disconnect();};osc.start(time);osc.stop(time+duration+.02);
+ }
+ const melody=[72,76,79,83,81,79,76,74,72,76,79,84,83,79,76,74,69,72,76,79,77,76,72,71,67,71,74,79,77,74,71,74];
+ const victory=[72,76,79,84,83,79,76,79,77,81,84,89,88,84,79,84,76,79,84,88,86,84,79,76,74,77,79,83,84,88,91,96];
+ function schedule(){
+  if(!ctx||mode==='off'||paused||document.hidden||!musicBox.checked)return;
+  if(next<ctx.currentTime-.2)next=ctx.currentTime+.04;
+  let count=0;
+  while(next<ctx.currentTime+.18&&count++<4){
+   const k=step%32,beat=60/(mode==='jp'?150:mode==='reach'?158:124+round*8)/2;
+   const chord=[48,45,53,55][Math.floor(k/8)],isReach=mode==='reach',note=isReach?[72,75,78,83,78,75,72,71][k%8]:(mode==='jp'?victory:melody)[k];
+   tone(note,next,beat*.85,mode==='jp'?'square':'triangle',mode==='jp'?.09:.16);
+   if(k%2===0)tone((isReach?44:chord),next,beat*1.4,'sine',.32);
+   if(mode==='jp'||round>=1||isReach)tone(chord+12+[0,7,12,7][k%4],next,beat*.65,'sine',.10);
+   if(k%4===0)tone(36,next,.09,'sine',.45);
+   if(mode==='jp'||round>=2){if(k%2===1)tone(90,next,.035,'square',.018);}
+   next+=beat;step++;
+  }
+ }
+ function changeMusic(value,r=round){
+  const changed=mode!==value;mode=value;round=r;
+  if(changed){clearNotes();step=0;if(ctx)next=ctx.currentTime+.04;}
+  if(value==='off'){if(timer)clearInterval(timer);timer=null;clearNotes();gain();return;}
+  if(musicBox.checked&&ensure()&&!timer)timer=setInterval(schedule,80);gain();schedule();
+ }
+ function stopSpeech(){if(synth)synth.cancel();utterance=null;ducked=false;gain();}
+ function speak(text,priority=false){
+  if(!speechOK||!voiceBox.checked||paused||document.hidden)return;
+  if(priority)stopSpeech();else if(synth.speaking||synth.pending)return;
+  const u=new window.SpeechSynthesisUtterance(text);u.lang='ja-JP';u.rate=1.08;u.pitch=1.28;u.volume=level();
+  const voices=synth.getVoices(),voice=voices.find(v=>/^ja/i.test(v.lang)&&v.localService)||voices.find(v=>/^ja/i.test(v.lang));if(voice)u.voice=voice;
+  utterance=u;u.onstart=()=>{if(utterance===u){ducked=true;gain();}};
+  const finish=()=>{if(utterance===u){utterance=null;ducked=false;gain();}};u.onend=finish;u.onerror=finish;
+  try{synth.speak(u);}catch{finish();hint.textContent='この端末ではボイスを再生できません';}
+ }
+ function announce(key,text,priority=false){if(said.has(key))return;said.add(key);speak(text,priority);}
+ function reset(){if(previewTimer)clearTimeout(previewTimer);previewTimer=null;said.clear();paused=false;changeMusic('off');stopSpeech();}
+ function start(){reset();ensure();changeMusic('round',0);announce('start','ジャックポットチャンス！ すべてのポケットを光らせよう！',true);}
+ function launch(serial){
+  if(mode==='jp')return;
+  const r=Math.min(3,Math.floor(Math.max(0,serial-1)/20));
+  if(mode==='round')changeMusic('round',r);
+  if(serial===21)announce('round2','セカンドラウンド！ まだまだ、いくよ！');
+  if(serial===41)announce('round3','サードラウンド！ ジャックポットを目指そう！');
+  if(serial===61)announce('round4','ファイナルラウンド！ ラスト十球！',true);
+ }
+ function hit(filled,missing){
+  if(filled===25){changeMusic('jp');announce('jp','ジャックポーット！ おめでとう！ 全ポケット、コンプリート！',true);}
+  else if(filled===24){changeMusic('reach');announce('reach',`リーチ！ あとひとつ！ ${missing+1}番に入れば、ジャックポット！`,true);}
+  else if(filled===23)announce('23','あと二つ！ チャンスだよ！');
+  else if(filled===20)announce('20','いい感じ！ あと五つ！');
+ }
+ function complete(filled){if(filled===25)return;changeMusic('off');announce('end',filled===24?'惜しい！ あとひとつだったね。またチャレンジしてね！':'チャレンジ終了！ また一緒に挑戦しよう！',true);}
+ function pause(value){paused=value;if(value){clearNotes();stopSpeech();}else{if(ctx){ctx.resume().catch(()=>{});next=ctx.currentTime+.04;}schedule();}gain();}
+ voiceBox.addEventListener('change',()=>{if(!voiceBox.checked)stopSpeech();else speak('ボイス、オン！',true);});
+ musicBox.addEventListener('change',()=>{if(!musicBox.checked){clearNotes();gain();}else changeMusic(mode,round);});
+ volume.addEventListener('input',gain);
+ q('[data-audio-test]').addEventListener('click',()=>{
+  ensure();speak('ジャックポットチャンス！ みんな、いくよ！',true);
+  if(mode==='off'&&musicBox.checked){changeMusic('round',0);if(previewTimer)clearTimeout(previewTimer);previewTimer=setTimeout(()=>{previewTimer=null;changeMusic('off');},6000);}
+ });
+ const visibility=()=>{if(document.hidden){clearNotes();stopSpeech();}else if(ctx){next=ctx.currentTime+.04;schedule();}};document.addEventListener('visibilitychange',visibility);
+ if(!speechOK){voiceBox.checked=false;voiceBox.disabled=true;}
+ if(!AudioCtor){musicBox.checked=false;musicBox.disabled=true;}
+ hint.textContent=!speechOK?'この端末はボイス非対応です':!AudioCtor?'この端末はBGM非対応です':'開始ボタンで音が出ます。音声テストで試聴できます';
+ function dispose(){reset();document.removeEventListener('visibilitychange',visibility);if(ctx)ctx.close().catch(()=>{});}
+ return {start,launch,hit,complete,pause,reset,dispose};
+}
+
 const root=document.getElementById('anima8-web-sim');
+const jpcAudio=createJpcAudio(root);
 try{startAnima8();}catch(error){root.querySelector('.a8-loading').textContent='WebGLの起動に失敗しました。Safari / Chromeで開き直すか、ブラウザのグラフィック設定をご確認ください。';console.error(error);}
 
 function startAnima8(){
@@ -67158,12 +67252,12 @@ function startAnima8(){
   if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?(jackpotPocket>=0?'JACKPOT！ 全25ポケット入賞':jpcReachPocket()>=0?`JPC終了 · ${jpcReachPocket()+1}番リーチ（24 / 25）`:`70球JPC終了 · ${jpcFilledCount()} / 25 ポケット入賞`):eight?'8球の抽選が終了しました':'連続抽選を停止しました';
   if(draw.state==='draining')status.textContent='投入停止 · 残りのボールを抽選中';
  }
- draw.onLaunch=addBallView;
- draw.onReset=()=>{clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
- draw.onState=state=>{if(state==='running')slopeStarted=physics.time;if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
- physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc')recordJpcHit(hit.pocket-1);const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
+ draw.onLaunch=ball=>{addBallView(ball);if(draw.mode==='jpc')jpcAudio.launch(physics.serial);};
+ draw.onReset=()=>{jpcAudio.reset();clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
+ draw.onState=state=>{if(state==='running'){slopeStarted=physics.time;if(draw.mode==='jpc')jpcAudio.start();}if(state==='complete'&&draw.mode==='jpc')jpcAudio.complete(jpcFilledCount());if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
+ physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){recordJpcHit(hit.pocket-1);jpcAudio.hit(jpcFilledCount(),jpcReachPocket());}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
  physics.onFault=id=>{status.textContent=`${id}球目が盤外へ出ました。リセットして調整できます`;};
- function setPaused(value){paused=value;const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
+ function setPaused(value){paused=value;jpcAudio.pause(value);const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
  function startOrStop(){if(draw.state==='running'){draw.stop();}else if(draw.state!=='draining'){setPaused(false);draw.start();}}
  all('[data-action]').forEach(button=>button.addEventListener('click',()=>{
   if(button.dataset.action==='start')startOrStop();
@@ -67223,7 +67317,7 @@ function startAnima8(){
  root.anima8={physics,draw,scene,setPaused,start:startOrStop,reset:()=>draw.reset(),
   get jpcCounts(){return [...jpcCounts];},
   get status(){return status.textContent;}};
- const cleanup=new MutationObserver(()=>{if(!root.isConnected){disposed=true;cancelAnimationFrame(frame);observer.disconnect();cleanup.disconnect();renderer.dispose();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();});materials.forEach(m=>m.dispose());panels.forEach(p=>p.texture.dispose());}});cleanup.observe(document.documentElement,{childList:true,subtree:true});
+ const cleanup=new MutationObserver(()=>{if(!root.isConnected){disposed=true;jpcAudio.dispose();cancelAnimationFrame(frame);observer.disconnect();cleanup.disconnect();renderer.dispose();scene.traverse(o=>{if(o.geometry)o.geometry.dispose();});materials.forEach(m=>m.dispose());panels.forEach(p=>p.texture.dispose());}});cleanup.observe(document.documentElement,{childList:true,subtree:true});
 }
 
 </script><script>
