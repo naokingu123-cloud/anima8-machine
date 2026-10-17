@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v50 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v51 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -66192,7 +66192,7 @@ const PHYSICS=(()=>{
 const DIM={count:25,ball:.24,hole:.255,pocket:3.08,hub:2.22,inner:3.50,outer:7.175,metresPerUnit:.10};
 const TAU=Math.PI*2;
 // Motion calibration for the estimated model dimensions; motor RPM stays in real seconds.
-const MOTION={gravityScale:1.05,friction:.10,rolling:.22,bounce:.44};
+const MOTION={gravityScale:1.15,friction:.10,rolling:.22,bounce:.44};
 // Glancing acrylic contact should slide rather than launch the ball away.
 const CONTACT={stopperBounce:.02,stopperFriction:.035,pocketBounce:.32,pocketFriction:.055,pocketRolling:.45,throatBounce:.28,throatFriction:.14};
 function bowlHeight(r){const t=Math.max(0,Math.min(1,(r-DIM.inner)/(DIM.outer-DIM.inner)));return .204*t+.391*t*t;}
@@ -67000,7 +67000,17 @@ function startAnima8(){
   }
   p.texture.needsUpdate=true;
  }
+ function drawReachPanel(i){
+  const p=panels[i],ctx=p.ctx,cells=numberPixels(i+1);
+  ctx.imageSmoothingEnabled=false;ctx.fillStyle='#292929';ctx.fillRect(0,0,PANEL_SIZE,PANEL_SIZE);
+  for(let y=0;y<PANEL_SIZE;y++)for(let x=0;x<PANEL_SIZE;x++)if(cells[y*PANEL_SIZE+x]){
+   const hue=((x/PANEL_SIZE*.8+y/PANEL_SIZE*.25-physics.time*.22)%1+1)%1;
+   ctx.fillStyle=`hsl(${hue*360},100%,62%)`;ctx.fillRect(x,y,1,1);
+  }
+  p.texture.needsUpdate=true;
+ }
  function drawPanel(i){
+  if(draw.mode==='jpc'&&i===jpcReachPocket()){drawReachPanel(i);return;}
   if(draw.mode==='jpc'&&jackpotPocket>=0&&!jpcLetter(i)){drawCelebrationPanel(i);return;}
   const p=panels[i],ctx=p.ctx,letter=draw.mode==='jpc'?jpcLetter(i):'',cells=draw.mode==='jpc'?starPixels():numberPixels(i+1);
   if(letter){
@@ -67135,7 +67145,7 @@ function startAnima8(){
   for(const view of ballViews.values()){scene.remove(view.mesh,view.trail);view.mesh.geometry.dispose();view.trail.geometry.dispose();view.trail.material.dispose();}
   ballViews.clear();hitTimes.fill(-100);jpcCounts.fill(0);jackpotPocket=-1;jackpotLetters.clear();
   results.replaceChildren();const span=document.createElement('span');span.className='a8-empty';span.textContent='入賞した番号がここに並びます';results.append(span);
-  for(let i=0;i<25;i++){updatePocketBadge(i);drawPanel(i);panels[i].green=null;panels[i].celebrationFrame=-1;}
+  for(let i=0;i<25;i++){updatePocketBadge(i);drawPanel(i);panels[i].green=null;panels[i].celebrationFrame=-1;panels[i].reachFrame=-1;}
   updateCount();
  }
  function updateDrawControls(){
@@ -67177,9 +67187,13 @@ function startAnima8(){
   panels.forEach((p,i)=>{
    if(draw.mode==='jpc'){
     // Occupied pockets stay continuously lit; only empty pockets pulse.
-    const n=jpcCounts[i],rainbow=i===jpcReachPocket()||jackpotLetters.has(i),tint=jackpotPocket>=0&&!jackpotLetters.has(i)?jpcRainbow.setRGB(1,1,1):rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
-    const wave=.5+.5*Math.sin(physics.time*TAU*.85-(n===0?0:i*.19));
-    const pulse=n>0||rainbow?1:.40+.60*wave*wave;
+    const n=jpcCounts[i],reach=i===jpcReachPocket(),rainbow=reach||jackpotLetters.has(i),tint=reach||jackpotPocket>=0&&!jackpotLetters.has(i)?jpcRainbow.setRGB(1,1,1):rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
+    const wave=.5+.5*Math.cos(physics.time*TAU/3);
+    const pulse=n>0||rainbow?1:.10+.90*wave;
+    if(reach){
+     const reachFrame=Math.floor(physics.time*12);
+     if(p.reachFrame!==reachFrame){p.reachFrame=reachFrame;drawReachPanel(i);}
+    }else if(p.reachFrame>=0){p.reachFrame=-1;drawPanel(i);}
     if(jackpotPocket>=0&&!jpcLetter(i)){
      const animationFrame=Math.floor(physics.time*10);
      if(p.celebrationFrame!==animationFrame){p.celebrationFrame=animationFrame;drawCelebrationPanel(i);}
