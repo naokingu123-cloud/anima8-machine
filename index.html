@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v46 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v47 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -99,7 +99,7 @@
     <div class="a8-jpc-legend" hidden aria-label="JPCの入賞回数ごとの星の色">
      <span><b style="color:#ffffff">★</b>0球</span><span><b style="color:#358bff">★</b>1球</span>
      <span><b style="color:#52ff7a">★</b>2球</span><span><b style="color:#ffe438">★</b>3球</span>
-     <span><b style="color:#d4b0ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球以上</span>
+     <span><b style="color:#d4b0ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球：リーチ（虹）</span><span>6球：JACKPOT（暫定）</span>
     </div></div>
    <button type="button" class="a8-primary a8-start" data-action="start">8球抽選を開始</button>
    <div class="a8-jpc-meter" hidden aria-label="JPCの70球発射進捗" role="progressbar" aria-valuemin="0" aria-valuemax="70" aria-valuenow="0"><div class="a8-jpc-track"><div data-jpc-fill></div></div><span data-jpc-progress>0 / 70 球 発射</span></div>
@@ -66777,6 +66777,18 @@ function startAnima8(){
  const panels=[],ballViews=new Map(),hitTimes=Array(25).fill(-100),jpcCounts=Array(25).fill(0);
  const JPC_COLORS=['#ffffff','#358bff','#52ff7a','#ffe438','#d4b0ff','#ff4141'];
  const jpcTints=JPC_COLORS.map(x=>new THREE.Color(x));
+ // Provisional JPC thresholds: five hits reach, six hits jackpot.
+ const JPC_REACH=5,JPC_JACKPOT=6;
+ let jackpotPocket=-1;
+ const jackpotLetters=new Map(),jpcRainbow=new THREE.Color();
+ const jpcRound=()=>Math.min(3,Math.floor(Math.max(0,physics.serial-1)/20));
+ function jpcLetter(i){return jackpotLetters.get(i)||'';}
+ function registerJackpot(i){
+  if(jackpotPocket>=0)return;
+  jackpotPocket=i;
+  [...'JACKPOT'].forEach((letter,k)=>jackpotLetters.set((i+k-3+25)%25,letter));
+  for(let k=0;k<25;k++){drawPanel(k);updatePocketBadge(k);}
+ }
  const materials=[];
  function material(color,metalness=.3,roughness=.4,emissive=null){const m=new THREE.MeshStandardMaterial({color,metalness,roughness});if(emissive){m.emissive=new THREE.Color(emissive);m.emissiveIntensity=.75;}materials.push(m);return m;}
  const gold=material('#bda266',.58,.38),bowlMat=material('#ae8545',.4,.42),dark=material('#152331',.45,.3),steel=material('#738596',.65,.3),cyan=material('#53e4cf',.2,.3,'#22bdad'),violet=material('#b06bf1',.2,.3,'#8846d9'),warm=material('#fff0b4',.1,.25,'#e6b952');
@@ -66842,6 +66854,26 @@ function startAnima8(){
  warmLEDs.name='Animated outer slope LEDs';halos.name='Animated outer slope halos';
  const slopeColor=new THREE.Color(),slopeRGB=[0,0,0];let slopeStarted=0,slopeStopped=0;
  function updateSlopeLights(){
+  if(draw.mode==='jpc'){
+   const t=physics.time,round=jpcRound(),active=draw.state!=='ready',angle=physics.angle;
+   for(let i=0;i<25;i++)for(let c=0;c<3;c++)for(let j=0;j<15;j++){
+    const u=(i+(c-1)*.28)/25,r=j/14,k=i*45+c*15+j;
+    // Stationary slope LEDs track the rotating pocket's outward radial line.
+    const pocket=((Math.round((angle/TAU-u)*25)%25)+25)%25;
+    const reach=jpcCounts[pocket]>=JPC_REACH;
+    const speed=.10+round*.075,fan=.5+.5*Math.cos(TAU*(u*(round+1)-t*speed+r*.22));
+    const chase=Math.pow(Math.max(0,Math.cos(TAU*(r-t*(.55+round*.28)+u*(round+1)))),10-round);
+    const sparkle=round>1?Math.pow(Math.max(0,Math.sin(i*7.1+c*3.7+j*2.3+t*(4+round))),18)*.35:0;
+    if(reach){slopeColor.setRGB(1,.008,.018).multiplyScalar(.65+.35*Math.sin(t*TAU*1.5)**2);}
+    else{
+     const hue=jackpotPocket>=0?u+r*.3-t*.35:round===0?.58+fan*.08:round===1?.39+fan*.22:round===2?.10+fan*.54:u+r*.35-t*.24;
+     slopeColor.setHSL(((hue%1)+1)%1,.9,.22+fan*(.07+round*.025)+chase*.22+sparkle*.12);
+     if(!active)slopeColor.multiplyScalar(.25);
+    }
+    warmLEDs.setColorAt(k,slopeColor);halos.setColorAt(k,slopeColor);
+   }
+   warmLEDs.instanceColor.needsUpdate=true;halos.instanceColor.needsUpdate=true;return;
+  }
   if(draw.mode!=='eight')return;
   const running=draw.state==='running',time=running?physics.time-slopeStarted:slopeStopped;
   for(let i=0;i<25;i++)for(let c=0;c<3;c++)for(let j=0;j<15;j++){
@@ -66940,7 +66972,12 @@ function startAnima8(){
  const centerGlow=mesh(new THREE.CircleGeometry(.49,48),new THREE.MeshBasicMaterial({color:'#5979ff',transparent:true,opacity:.38,depthWrite:false,toneMapped:false}),rotor,[0,discY+.004,0]);centerGlow.rotation.x=-Math.PI/2;
 
  function drawPanel(i){
-  const p=panels[i],ctx=p.ctx,cells=draw.mode==='jpc'?starPixels():numberPixels(i+1);
+  const p=panels[i],ctx=p.ctx,letter=draw.mode==='jpc'?jpcLetter(i):'',cells=draw.mode==='jpc'?starPixels():numberPixels(i+1);
+  if(letter){
+   const glyphs={J:['00111','00010','00010','00010','10010','10010','01100'],A:['01110','10001','10001','11111','10001','10001','10001'],C:['01111','10000','10000','10000','10000','10000','01111'],K:['10001','10010','10100','11000','10100','10010','10001'],P:['11110','10001','10001','11110','10000','10000','10000'],O:['01110','10001','10001','10001','10001','10001','01110'],T:['11111','00100','00100','00100','00100','00100','00100']};
+   ctx.fillStyle='#222';ctx.fillRect(0,0,PANEL_SIZE,PANEL_SIZE);ctx.fillStyle='#fff';
+   glyphs[letter].forEach((row,y)=>[...row].forEach((v,x)=>{if(v==='1')ctx.fillRect(5+x*2,3+y*2,2,2);}));p.texture.needsUpdate=true;return;
+  }
   ctx.imageSmoothingEnabled=false;ctx.fillStyle='#454545';ctx.fillRect(0,0,PANEL_SIZE,PANEL_SIZE);
   ctx.fillStyle='#ffffff';for(let y=0;y<PANEL_SIZE;y++)for(let x=0;x<PANEL_SIZE;x++)if(cells[y*PANEL_SIZE+x])ctx.fillRect(x,y,1,1);
   p.texture.needsUpdate=true;
@@ -67040,7 +67077,7 @@ function startAnima8(){
  function updateCount(){
   el('[data-count]').textContent=draw.mode==='jpc'?`JPC 入賞 ${physics.hits.length} / 発射 ${physics.serial} / 70`:`入賞 ${physics.hits.length} / 投入 ${physics.serial}`;
   const meter=el('.a8-jpc-meter');meter.setAttribute('aria-valuenow',String(physics.serial));
-  el('[data-jpc-progress]').textContent=`${physics.serial} / 70 球 発射`;
+  el('[data-jpc-progress]').textContent=`ROUND ${jpcRound()+1} / 4 · ${physics.serial} / 70 球 発射`;
   el('[data-jpc-fill]').style.width=`${Math.min(100,physics.serial/70*100)}%`;
  }
  function updatePocketBadge(i){
@@ -67049,7 +67086,7 @@ function startAnima8(){
    span.classList.add('jpc');span.classList.toggle('hit',n>0);
    span.style.setProperty('--jpc-color',JPC_COLORS[Math.min(5,n)]);
    span.replaceChildren();const no=document.createElement('b'),count=document.createElement('small');
-   no.textContent=i+1;count.textContent=n;span.append(no,count);
+   no.textContent=jpcLetter(i)||i+1;count.textContent=n;span.append(no,count);
    span.setAttribute('aria-label',`${i+1}番 ${n}球入賞`);
   }else{
    span.classList.remove('jpc');span.style.removeProperty('--jpc-color');span.textContent=i+1;
@@ -67066,7 +67103,7 @@ function startAnima8(){
   ballViews.set(ball.id,{mesh:m,trail,points:[],lastTrailTime:-1});status.textContent=`${ball.id}球目を抽選中`;updateCount();}
  function clearViews(){
   for(const view of ballViews.values()){scene.remove(view.mesh,view.trail);view.mesh.geometry.dispose();view.trail.geometry.dispose();view.trail.material.dispose();}
-  ballViews.clear();hitTimes.fill(-100);jpcCounts.fill(0);
+  ballViews.clear();hitTimes.fill(-100);jpcCounts.fill(0);jackpotPocket=-1;jackpotLetters.clear();
   results.replaceChildren();const span=document.createElement('span');span.className='a8-empty';span.textContent='入賞した番号がここに並びます';results.append(span);
   for(let i=0;i<25;i++){updatePocketBadge(i);drawPanel(i);panels[i].green=null;}
   updateCount();
@@ -67084,7 +67121,7 @@ function startAnima8(){
  draw.onLaunch=addBallView;
  draw.onReset=()=>{clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
  draw.onState=state=>{if(state==='running')slopeStarted=physics.time;if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
- physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc')jpcCounts[hit.pocket-1]++;const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=`${hit.pocket}番に入賞`;updateCount();};
+ physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){jpcCounts[hit.pocket-1]++;if(jpcCounts[hit.pocket-1]>=JPC_JACKPOT)registerJackpot(hit.pocket-1);}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcCounts[hit.pocket-1]>=JPC_REACH?`${hit.pocket}番 リーチ！`:`${hit.pocket}番に入賞`;updateCount();};
  physics.onFault=id=>{status.textContent=`${id}球目が盤外へ出ました。リセットして調整できます`;};
  function setPaused(value){paused=value;const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
  function startOrStop(){if(draw.state==='running'){draw.stop();}else if(draw.state!=='draining'){setPaused(false);draw.start();}}
@@ -67110,7 +67147,7 @@ function startAnima8(){
   panels.forEach((p,i)=>{
    if(draw.mode==='jpc'){
     // Star silhouettes blink, while their hue is fixed by real per-pocket hit counts.
-    const n=jpcCounts[i],tint=jpcTints[Math.min(n,5)];
+    const n=jpcCounts[i],rainbow=n>=JPC_REACH||jackpotLetters.has(i),tint=rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
     const wave=.5+.5*Math.sin(physics.time*TAU*.85-(n===0?0:i*.19));
     const pulse=.12+.88*wave*wave;
     p.material.uniforms.lightTint.value.copy(tint);
