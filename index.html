@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v52 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v53 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -107,7 +107,8 @@
    <section class="a8-audio" aria-label="JPCの音声とBGM" style="padding:10px;border:1px solid var(--a8-line);border-radius:9px;display:grid;gap:8px">
     <div style="display:flex;flex-wrap:wrap;gap:12px"><label class="a8-check"><input type="checkbox" id="a8-voice" checked>実況ボイス</label><label class="a8-check"><input type="checkbox" id="a8-bgm" checked>BGM</label></div>
     <label for="a8-volume">音量 <input id="a8-volume" type="range" min="0" max="100" value="65" style="width:65%;vertical-align:middle"></label>
-    <button type="button" data-audio-test>音声テスト ♪</button>
+    <div class="a8-actions"><button type="button" data-bgm-play>BGMを再生 ♪</button><button type="button" data-audio-test>ボイステスト</button></div>
+    <audio data-bgm-player controls loop preload="auto" playsinline src="./bgm-round1.mp3" style="width:100%;height:36px" aria-label="BGMプレーヤー"></audio>
     <small data-audio-hint style="line-height:1.5;color:var(--a8-muted)"></small>
    </section>
     <label class="a8-check"><input type="checkbox" id="a8-trails">ボールの軌跡</label>
@@ -66763,49 +66764,38 @@ const {RoulettePhysics,DIM,TAU,polar,lathe,bowlHeight,deckHeight,hubHeight,STOPP
 const {DrawController}=DRAW;
 const {PANEL_SIZE,numberPixels,starPixels}=PIXELS;
 const {slopeLightRGB}=LIGHTS;
-// Original synthesized music and Japanese speech; no external audio downloads.
+// Original rendered MP3 soundtrack and Japanese speech; gesture-driven media playback.
 function createJpcAudio(root){
- const q=s=>root.querySelector(s),voiceBox=q('#a8-voice'),musicBox=q('#a8-bgm'),volume=q('#a8-volume'),hint=q('[data-audio-hint]');
- const synth=window.speechSynthesis,speechOK=!!(synth&&window.SpeechSynthesisUtterance),AudioCtor=window.AudioContext||window.webkitAudioContext;
- let ctx=null,master=null,timer=null,next=0,step=0,mode='off',round=0,paused=false,ducked=false,utterance=null,previewTimer=null;
- const nodes=new Set(),said=new Set();
+ const q=s=>root.querySelector(s),voiceBox=q('#a8-voice'),musicBox=q('#a8-bgm'),volume=q('#a8-volume'),hint=q('[data-audio-hint]'),player=q('[data-bgm-player]'),playButton=q('[data-bgm-play]');
+ const synth=window.speechSynthesis,speechOK=!!(synth&&window.SpeechSynthesisUtterance);
+ let mode='off',round=0,paused=false,ducked=false,utterance=null,previewTimer=null,playRequest=0;
+ const said=new Set();
  function level(){return Number(volume.value)/100;}
- function gain(){if(master&&ctx)master.gain.setTargetAtTime(musicBox.checked&&!paused?level()*(ducked?.22:1)*.26:0,ctx.currentTime,.06);}
- function clearNotes(){for(const n of nodes){try{n.stop();}catch{}}nodes.clear();}
- function ensure(){
-  if(!AudioCtor)return false;
-  if(!ctx){ctx=new AudioCtor();master=ctx.createGain();master.gain.value=0;master.connect(ctx.destination);}
-  ctx.resume().catch(()=>{hint.textContent='音が出ない場合は「音声テスト」を押してください';});gain();return true;
+ function gain(){player.volume=level()*(ducked?.35:1);}
+ function showHint(){playButton.textContent=player.paused?'BGMを再生 ♪':'BGMを停止';hint.textContent=player.paused?'BGMを再生ボタン、または下の▶で再生できます':`BGM再生中 ♪ ${mode==='jp'?'JP':mode==='reach'?'リーチ':'ラウンド'+(round+1)}`;}
+ function clearNotes(){player.pause();}
+ function ensure(){gain();return true;}
+ function playMusic(){
+  if(paused||document.hidden||!musicBox.checked)return;
+  const request=++playRequest;gain();
+  const promise=player.play();
+  if(promise&&promise.catch)promise.catch(()=>{if(request===playRequest)hint.textContent='BGMを再生ボタン、または下の▶を押してください';});
  }
- function tone(note,time,duration,type='triangle',strength=.15){
-  if(!ctx||note===null)return;
-  const osc=ctx.createOscillator(),g=ctx.createGain();osc.type=type;osc.frequency.value=440*Math.pow(2,(note-69)/12);
-  g.gain.setValueAtTime(0,time);g.gain.linearRampToValueAtTime(strength,time+.012);g.gain.exponentialRampToValueAtTime(.0001,time+duration);
-  osc.connect(g);g.connect(master);nodes.add(osc);osc.onended=()=>{nodes.delete(osc);osc.disconnect();g.disconnect();};osc.start(time);osc.stop(time+duration+.02);
- }
- const melody=[72,76,79,83,81,79,76,74,72,76,79,84,83,79,76,74,69,72,76,79,77,76,72,71,67,71,74,79,77,74,71,74];
- const victory=[72,76,79,84,83,79,76,79,77,81,84,89,88,84,79,84,76,79,84,88,86,84,79,76,74,77,79,83,84,88,91,96];
- function schedule(){
-  if(!ctx||mode==='off'||paused||document.hidden||!musicBox.checked)return;
-  if(next<ctx.currentTime-.2)next=ctx.currentTime+.04;
-  let count=0;
-  while(next<ctx.currentTime+.18&&count++<4){
-   const k=step%32,beat=60/(mode==='jp'?150:mode==='reach'?158:124+round*8)/2;
-   const chord=[48,45,53,55][Math.floor(k/8)],isReach=mode==='reach',note=isReach?[72,75,78,83,78,75,72,71][k%8]:(mode==='jp'?victory:melody)[k];
-   tone(note,next,beat*.85,mode==='jp'?'square':'triangle',mode==='jp'?.09:.16);
-   if(k%2===0)tone((isReach?44:chord),next,beat*1.4,'sine',.32);
-   if(mode==='jp'||round>=1||isReach)tone(chord+12+[0,7,12,7][k%4],next,beat*.65,'sine',.10);
-   if(k%4===0)tone(36,next,.09,'sine',.45);
-   if(mode==='jp'||round>=2){if(k%2===1)tone(90,next,.035,'square',.018);}
-   next+=beat;step++;
-  }
- }
+ function schedule(){if(mode!=='off')playMusic();}
  function changeMusic(value,r=round){
-  const changed=mode!==value;mode=value;round=r;
-  if(changed){clearNotes();step=0;if(ctx)next=ctx.currentTime+.04;}
-  if(value==='off'){if(timer)clearInterval(timer);timer=null;clearNotes();gain();return;}
-  if(musicBox.checked&&ensure()&&!timer)timer=setInterval(schedule,80);gain();schedule();
+  const changed=mode!==value||round!==r;mode=value;round=r;
+  if(value==='off'){playRequest++;player.pause();player.currentTime=0;showHint();return;}
+  const name=value==='jp'?'jp':value==='reach'?'reach':'round'+(r+1),url='./bgm-'+name+'.mp3';
+  if(changed||player.getAttribute('src')!==url){player.setAttribute('src',url);player.load();}
+  if(musicBox.checked)playMusic();else player.pause();
  }
+ player.addEventListener('play',()=>{musicBox.checked=true;showHint();});
+ player.addEventListener('pause',showHint);
+ player.addEventListener('error',()=>{hint.textContent='BGMの読込に失敗しました。ページを更新してお試しください';});
+ playButton.addEventListener('click',()=>{
+  if(!player.paused){musicBox.checked=false;player.pause();showHint();}
+  else{musicBox.checked=true;paused=false;changeMusic(mode==='off'?'round':mode,round);}
+ });
  function stopSpeech(){if(synth)synth.cancel();utterance=null;ducked=false;gain();}
  function speak(text,priority=false){
   if(!speechOK||!voiceBox.checked||paused||document.hidden)return;
@@ -66834,19 +66824,18 @@ function createJpcAudio(root){
   else if(filled===20)announce('20','いい感じ！ あと五つ！');
  }
  function complete(filled){if(filled===25)return;changeMusic('off');announce('end',filled===24?'惜しい！ あとひとつだったね。またチャレンジしてね！':'チャレンジ終了！ また一緒に挑戦しよう！',true);}
- function pause(value){paused=value;if(value){clearNotes();stopSpeech();}else{if(ctx){ctx.resume().catch(()=>{});next=ctx.currentTime+.04;}schedule();}gain();}
+ function pause(value){paused=value;if(value){player.pause();stopSpeech();}else if(mode!=='off')playMusic();gain();}
  voiceBox.addEventListener('change',()=>{if(!voiceBox.checked)stopSpeech();else speak('ボイス、オン！',true);});
- musicBox.addEventListener('change',()=>{if(!musicBox.checked){clearNotes();gain();}else changeMusic(mode,round);});
+ musicBox.addEventListener('change',()=>{if(!musicBox.checked){player.pause();gain();}else changeMusic(mode==='off'?'round':mode,round);});
  volume.addEventListener('input',gain);
  q('[data-audio-test]').addEventListener('click',()=>{
   ensure();speak('ジャックポットチャンス！ みんな、いくよ！',true);
-  if(mode==='off'&&musicBox.checked){changeMusic('round',0);if(previewTimer)clearTimeout(previewTimer);previewTimer=setTimeout(()=>{previewTimer=null;changeMusic('off');},6000);}
+
  });
- const visibility=()=>{if(document.hidden){clearNotes();stopSpeech();}else if(ctx){next=ctx.currentTime+.04;schedule();}};document.addEventListener('visibilitychange',visibility);
+ const visibility=()=>{if(document.hidden){clearNotes();stopSpeech();}else if(mode!=='off')playMusic();};document.addEventListener('visibilitychange',visibility);
  if(!speechOK){voiceBox.checked=false;voiceBox.disabled=true;}
- if(!AudioCtor){musicBox.checked=false;musicBox.disabled=true;}
- hint.textContent=!speechOK?'この端末はボイス非対応です':!AudioCtor?'この端末はBGM非対応です':'開始ボタンで音が出ます。音声テストで試聴できます';
- function dispose(){reset();document.removeEventListener('visibilitychange',visibility);if(ctx)ctx.close().catch(()=>{});}
+ showHint();
+ function dispose(){reset();document.removeEventListener('visibilitychange',visibility);player.removeAttribute('src');player.load();}
  return {start,launch,hit,complete,pause,reset,dispose};
 }
 
