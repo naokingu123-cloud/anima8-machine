@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v48 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v49 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -66843,12 +66843,12 @@ function startAnima8(){
  const ledCount=25*3*15,ledDummy=new THREE.Object3D(),warmLEDs=new THREE.InstancedMesh(new THREE.SphereGeometry(1,8,6),pinkLED,ledCount);
  const haloMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,toneMapped:false,
   uniforms:{strength:{value:1.2}},vertexShader:`varying vec2 lightUV;varying vec3 lightColor;void main(){lightUV=uv;lightColor=instanceColor;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.0);}`,
-  fragmentShader:`uniform float strength;varying vec2 lightUV;varying vec3 lightColor;void main(){vec2 p=lightUV-.5;float halo=exp(-18.0*dot(p,p))*.18*strength;gl_FragColor=vec4(lightColor,halo);}`});materials.push(haloMat);
+  fragmentShader:`uniform float strength;varying vec2 lightUV;varying vec3 lightColor;void main(){vec2 p=lightUV-.5;float halo=exp(-13.0*dot(p,p))*.34*strength;gl_FragColor=vec4(lightColor,halo);}`});materials.push(haloMat);
  const halos=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),haloMat,ledCount);
  for(let i=0;i<25;i++)for(let c=0;c<3;c++)for(let j=0;j<15;j++){
   const r=4.68+j*(DIM.outer-4.76)/14,a=(i+(c-1)*.28)*TAU/25,k=i*45+c*15+j,color=new THREE.Color((Math.floor(i/5)+Math.floor(j/2))%3===0?'#fffbd7':'#ff61e3');
-  ledDummy.position.set(...polar(r,a,bowlHeight(r)-.035));ledDummy.quaternion.identity();ledDummy.scale.set(.034,.014,.034);ledDummy.updateMatrix();warmLEDs.setMatrixAt(k,ledDummy.matrix);warmLEDs.setColorAt(k,color);
-  ledDummy.position.y=bowlHeight(r)-.031;ledDummy.scale.set(.38,.38,1);
+  ledDummy.position.set(...polar(r,a,bowlHeight(r)-.035));ledDummy.quaternion.identity();ledDummy.scale.set(.074,.024,.074);ledDummy.updateMatrix();warmLEDs.setMatrixAt(k,ledDummy.matrix);warmLEDs.setColorAt(k,color);
+  ledDummy.position.y=bowlHeight(r)-.031;ledDummy.scale.set(.86,.74,1);
   const t=(r-DIM.inner)/(DIM.outer-DIM.inner),slope=(.204+.782*t)/(DIM.outer-DIM.inner);
   ledDummy.quaternion.setFromAxisAngle(new THREE.Vector3(0,1,0),a).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2-Math.atan(slope)));
   ledDummy.updateMatrix();halos.setMatrixAt(k,ledDummy.matrix);halos.setColorAt(k,color);
@@ -66863,14 +66863,14 @@ function startAnima8(){
     // Stationary slope LEDs track the rotating pocket's outward radial line.
     const pocket=((Math.round((angle/TAU-u)*25)%25)+25)%25;
     const reach=pocket===reachIndex;
-    const speed=.10+round*.075,fan=.5+.5*Math.cos(TAU*(u*(round+1)-t*speed+r*.22));
-    const chase=Math.pow(Math.max(0,Math.cos(TAU*(r-t*(.55+round*.28)+u*(round+1)))),10-round);
+    const speed=.14+round*.095,fan=.5+.5*Math.cos(TAU*(u*(round+1)-t*speed+r*.22));
+    const chase=Math.pow(Math.max(0,Math.cos(TAU*(r-t*(.55+round*.28)+u*(round+1)))),6-round);
     const sparkle=round>1?Math.pow(Math.max(0,Math.sin(i*7.1+c*3.7+j*2.3+t*(4+round))),18)*.35:0;
-    if(reach){slopeColor.setRGB(1,.008,.018).multiplyScalar(.65+.35*Math.sin(t*TAU*1.5)**2);}
+    if(reach){slopeColor.setRGB(1,.006,.012).multiplyScalar(1.5+.7*Math.sin(t*TAU*1.5)**2);}
     else{
      const hue=jackpotPocket>=0?u+r*.3-t*.35:round===0?.58+fan*.08:round===1?.39+fan*.22:round===2?.10+fan*.54:u+r*.35-t*.24;
-     slopeColor.setHSL(((hue%1)+1)%1,.9,.22+fan*(.07+round*.025)+chase*.22+sparkle*.12);
-     if(!active)slopeColor.multiplyScalar(.25);
+     slopeColor.setHSL(((hue%1)+1)%1,.94,.28+fan*(.07+round*.025)+chase*.25+sparkle*.16);
+     slopeColor.multiplyScalar(active?1.25+round*.18+(.12+.06*round)*Math.sin(t*TAU*.75)**2:.35);
     }
     warmLEDs.setColorAt(k,slopeColor);halos.setColorAt(k,slopeColor);
    }
@@ -67151,11 +67151,11 @@ function startAnima8(){
     // Star silhouettes blink, while their hue is fixed by real per-pocket hit counts.
     const n=jpcCounts[i],rainbow=i===jpcReachPocket()||jackpotLetters.has(i),tint=rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
     const wave=.5+.5*Math.sin(physics.time*TAU*.85-(n===0?0:i*.19));
-    const pulse=.12+.88*wave*wave;
+    const pulse=rainbow?.65+.35*wave:.12+.88*wave*wave;
     p.material.uniforms.lightTint.value.copy(tint);
     p.scatter.uniforms.lightTint.value.copy(tint);
-    p.material.uniforms.brightness.value=brightness*1.35*pulse;
-    p.scatter.uniforms.brightness.value=brightness*1.30*pulse;
+    p.material.uniforms.brightness.value=brightness*(rainbow?1.85:1.35)*pulse;
+    p.scatter.uniforms.brightness.value=brightness*(rainbow?1.75:1.30)*pulse;
     p.material.uniforms.flash.value=wave>.8?0.5:0;
     p.scatter.uniforms.flash.value=0;
     innerLights[i].color.copy(tint).multiplyScalar(brightness);
