@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v54 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v55 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -101,6 +101,11 @@
      <span><b style="color:#52ff7a">★</b>2球</span><span><b style="color:#ffe438">★</b>3球</span>
      <span><b style="color:#9b18ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球以上</span><span>24ポケット入賞：リーチ（残りマスが虹）</span><span>全25ポケット入賞：JACKPOT</span>
     </div></div>
+   <div class="a8-jpc-aim" hidden style="margin:0 0 12px;padding:10px;border:1px solid var(--a8-line);border-radius:9px">
+    <label class="a8-check"><input type="checkbox" id="a8-jpc-aim">JP狙い（試作）</label>
+    <small>抽選中の結果を使い、発射を最大2秒待って空きポケットを狙います。JPの保証はありません。</small>
+    <p data-aim-status style="margin:5px 0 0;font-size:12px;color:var(--a8-muted)">通常の1秒間隔</p>
+   </div>
    <button type="button" class="a8-primary a8-start" data-action="start">8球抽選を開始</button>
    <div class="a8-jpc-meter" hidden aria-label="JPCの70球発射進捗" role="progressbar" aria-valuemin="0" aria-valuemax="70" aria-valuenow="0"><div class="a8-jpc-track"><div data-jpc-fill></div></div><span data-jpc-progress>0 / 70 球 発射</span></div>
    <div class="a8-actions"><button type="button" data-action="pause" aria-pressed="false">一時停止</button><button type="button" data-action="reset">リセット</button></div>
@@ -66521,7 +66526,7 @@ class DrawController{
   if(this.mode==='continuous'){if(p.time>=this.next){if(this.launch())this.next=p.time+p.settings.interval;}return;}
   if(this.mode==='jpc'){
    if(this.sent>=70){if(!p.active)this.setState('complete');return;}
-   if(p.time>=this.next&&this.launch()){
+   if(p.time>=this.next&&p.active<10&&(!this.canLaunchJpc||this.canLaunchJpc())&&this.launch()){
     this.sent++;this.next=p.time+p.settings.interval;
     if(this.sent>=70)this.onAllLaunched?.();
    }
@@ -66533,7 +66538,56 @@ class DrawController{
  }
 }
 
-return {DrawController};
+// Online timing heuristic: observe actual outcomes, never preview or alter physics.
+class JpcLaunchPlanner{
+ constructor(physics,counts){this.physics=physics;this.counts=counts;this.enabled=false;this.reset();}
+ reset(){this.samples=[];this.flights=new Map();this.plan=null;this.lastTarget=-1;this.observed=0;this.revision=0;}
+ recordLaunch(ball){
+  if(this.enabled)this.flights.set(ball.id,{phase:this.physics.angle,target:this.plan?.target??-1});
+  this.lastTarget=this.plan?.target??-1;this.plan=null;
+ }
+ recordHit(hit){
+  const flight=this.flights.get(hit.ball);this.flights.delete(hit.ball);
+  if(!this.enabled||!flight)return;
+  // Pocket indices increase with positive rotor angle (reversed numbering).
+  const tau=Math.PI*2,pitch=tau/25;
+  this.samples.push(((hit.pocket-1)*pitch-flight.phase+tau)%tau);
+  if(this.samples.length>32)this.samples.shift();
+  this.observed++;this.revision++;
+ }
+ recordFault(id){this.flights.delete(id);this.revision++;}
+ choose(earliest,deadline){
+  const p=this.physics,tau=Math.PI*2,pitch=tau/25,w=p.settings.rpm*tau/60,counts=this.counts(),reserved=Array(25).fill(0);
+  for(const flight of this.flights.values())if(flight.target>=0)reserved[flight.target]++;
+  const weights=counts.map((n,i)=>n===0?1/(1+.5*reserved[i]):0),span=Math.max(0,deadline-earliest),steps=Math.max(1,Math.ceil(span*60));
+  let best={time:earliest,target:-1,score:-Infinity,revision:this.revision};
+  for(let k=0;k<=steps;k++){
+   const time=earliest+span*k/steps,phase=p.angle+w*(time-p.time),votes=Array(25).fill(0);
+   for(const offset of this.samples){
+    const position=(phase+offset)/pitch,base=Math.floor(position),fraction=position-base;
+    // Smooth between pocket centers, with uncertainty on both neighboring pockets.
+    for(let delta=-1;delta<=1;delta++){
+     const index=((base+delta)%25+25)%25,weight=delta===0?.6:.2;
+     votes[index]+=weight*(1-fraction);votes[(index+1)%25]+=weight*fraction;
+    }
+   }
+   let reward=0,target=-1,targetVote=0;
+   for(let i=0;i<25;i++){const vote=votes[i]*weights[i];reward+=vote;if(vote>targetVote){target=i;targetVote=vote;}}
+   const score=reward/this.samples.length-(time-earliest)*.01;
+   if(score>best.score+1e-9)best={time,target,score,revision:this.revision};
+  }
+  return best;
+ }
+ ready(baseTime){
+  if(!this.enabled||this.samples.length<3||this.counts().every(n=>n>0)){this.plan=null;return true;}
+  const p=this.physics,deadline=baseTime+2;
+  // Replanning on a new result must never keep extending the wait.
+  if(p.time>=deadline||Math.abs(p.settings.rpm)<1e-6){this.plan=null;return true;}
+  if(!this.plan||this.plan.revision!==this.revision||p.time>this.plan.time+.025)this.plan=this.choose(p.time,deadline);
+  return p.time+1e-6>=this.plan.time;
+ }
+}
+return {DrawController,JpcLaunchPlanner};
 })();
 
 const PIXELS=(()=>{
@@ -66777,7 +66831,7 @@ return {slopeLightRGB};
 })();
 
 const {RoulettePhysics,DIM,TAU,polar,lathe,bowlHeight,deckHeight,hubHeight,STOPPERS,stopperMesh}=PHYSICS;
-const {DrawController}=DRAW;
+const {DrawController,JpcLaunchPlanner}=DRAW;
 const {PANEL_SIZE,numberPixels,starPixels,COUNTER_SIZE,counterPixels}=PIXELS;
 const {slopeLightRGB}=LIGHTS;
 // Original rendered MP3 soundtrack and Japanese speech; gesture-driven media playback.
@@ -66874,6 +66928,7 @@ function startAnima8(){
  let yaw=Math.PI,elevation=24,distance=17.1,aspect=1,paused=false,rate=1,brightness=1.2,disposed=false;
  const target=new THREE.Vector3(0,.10,0),rotor=new THREE.Group();scene.add(rotor);
  const panels=[],ballViews=new Map(),hitTimes=Array(25).fill(-100),jpcCounts=Array(25).fill(0);
+ const launchPlanner=new JpcLaunchPlanner(physics,()=>jpcCounts);
  const JPC_COLORS=['#ffffff','#358bff','#52ff7a','#ffe438','#9b18ff','#ff4141'];
  const jpcTints=JPC_COLORS.map(x=>new THREE.Color(x));
  // Reach: 24 distinct occupied pockets; jackpot: all 25 occupied.
@@ -67293,21 +67348,28 @@ function startAnima8(){
   for(let i=0;i<25;i++){updatePocketBadge(i);drawPanel(i);panels[i].green=null;panels[i].celebrationFrame=-1;panels[i].reachFrame=-1;}
   updateCount();
  }
+ function updateAimStatus(){
+  const node=el('[data-aim-status]');
+  const text=!launchPlanner.enabled?'通常の1秒間隔':draw.state==='complete'?'JP狙いの抽選が終了':jackpotPocket>=0?'JP達成 · 残りは通常発射':physics.serial>=70?'70球発射済み · 残りの入賞待ち':launchPlanner.observed<3?`補正用の入賞を収集中 ${launchPlanner.observed}/3`:launchPlanner.plan?.target>=0?`次の狙い：${launchPlanner.plan.target+1}番`:'空きポケットに合わせて発射タイミングを補正';
+  if(node.textContent!==text)node.textContent=text;
+ }
  function updateDrawControls(){
   const running=draw.state==='running',eight=draw.mode==='eight',jpc=draw.mode==='jpc',start=el('[data-action=start]');
   start.disabled=((eight||jpc)&&running)||draw.state==='draining';
   start.textContent=running?(jpc?'JPC抽選中 · 70球':eight?'8球抽選中':'投入を止める'):(jpc?'70球JPCを開始':eight?'8球抽選を開始':'連続抽選を開始');
-  el('[data-mode-detail]').textContent=jpc?'70球を1秒間隔で発射。入賞球はすぐ回収し、各ポケットの星色が入賞回数で変わります':eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
-  el('.a8-jpc-legend').hidden=!jpc;el('.a8-jpc-meter').hidden=!jpc;
+  el('[data-mode-detail]').textContent=jpc?(launchPlanner.enabled?'70球。最初の入賞結果から空きポケットを狙い、発射間隔を通常より最大2秒延ばします':'70球を1秒間隔で発射。入賞球はすぐ回収し、各ポケットの星色が入賞回数で変わります'):eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
+  el('.a8-jpc-legend').hidden=!jpc;el('.a8-jpc-meter').hidden=!jpc;el('.a8-jpc-aim').hidden=!jpc;
+  el('#a8-jpc-aim').disabled=running||draw.state==='draining';updateAimStatus();
   if(draw.state==='ready')status.textContent=jpc?'JPC待機中 · 25ポケットの星が白く点滅':'抽選開始を押してください';
   if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?(jackpotPocket>=0?'JACKPOT！ 全25ポケット入賞':jpcReachPocket()>=0?`JPC終了 · ${jpcReachPocket()+1}番リーチ（24 / 25）`:`70球JPC終了 · ${jpcFilledCount()} / 25 ポケット入賞`):eight?'8球の抽選が終了しました':'連続抽選を停止しました';
   if(draw.state==='draining')status.textContent='投入停止 · 残りのボールを抽選中';
  }
- draw.onLaunch=ball=>{addBallView(ball);if(draw.mode==='jpc')jpcAudio.launch(physics.serial);};
- draw.onReset=()=>{jpcAudio.reset();clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
+ draw.canLaunchJpc=()=>launchPlanner.ready(draw.next);
+ draw.onLaunch=ball=>{if(draw.mode==='jpc')launchPlanner.recordLaunch(ball);addBallView(ball);if(draw.mode==='jpc')jpcAudio.launch(physics.serial);};
+ draw.onReset=()=>{launchPlanner.enabled=el('#a8-jpc-aim').checked;launchPlanner.reset();jpcAudio.reset();clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
  draw.onState=state=>{if(state==='running'){slopeStarted=physics.time;if(draw.mode==='jpc')jpcAudio.start();}if(state==='complete'&&draw.mode==='jpc')jpcAudio.complete(jpcFilledCount());if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
- physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){recordJpcHit(hit.pocket-1);jpcAudio.hit(jpcFilledCount(),jpcReachPocket());}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
- physics.onFault=id=>{status.textContent=`${id}球目が盤外へ出ました。リセットして調整できます`;};
+ physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){recordJpcHit(hit.pocket-1);launchPlanner.recordHit(hit);updateAimStatus();jpcAudio.hit(jpcFilledCount(),jpcReachPocket());}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
+ physics.onFault=id=>{launchPlanner.recordFault(id);status.textContent=`${id}球目が盤外へ出ました。リセットして調整できます`;};
  function setPaused(value){paused=value;jpcAudio.pause(value);const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
  function startOrStop(){if(draw.state==='running'){draw.stop();}else if(draw.state!=='draining'){setPaused(false);draw.start();}}
  all('[data-action]').forEach(button=>button.addEventListener('click',()=>{
@@ -67316,6 +67378,7 @@ function startAnima8(){
   if(button.dataset.action==='reset'){draw.reset();setPaused(false);}
  }));
  el('#a8-mode').addEventListener('change',event=>{draw.select(event.target.value);setPaused(false);});
+ el('#a8-jpc-aim').addEventListener('change',()=>{launchPlanner.enabled=el('#a8-jpc-aim').checked;launchPlanner.reset();updateDrawControls();});
  const keyHandler=event=>{if(location.search.includes('linked'))return;if(/INPUT|SELECT|TEXTAREA/.test(event.target.tagName))return;if(event.code==='Space'){event.preventDefault();startOrStop();}if(event.code==='KeyP')setPaused(!paused);};
  root.addEventListener('keydown',keyHandler);
  let last=performance.now(),accumulator=0,frame;
@@ -67360,6 +67423,7 @@ function startAnima8(){
     p.scatter.uniforms.brightness.value=brightness*1.35*shimmer;p.scatter.uniforms.flash.value=flash?1:0;
    }
   });
+  if(draw.mode==='jpc')updateAimStatus();
   updateCenterLight();updateSlopeLights();centerGlow.material.opacity=.36+.03*Math.sin(physics.time*2);pinkLED.color.setScalar(brightness);haloMat.uniforms.strength.value=brightness;renderer.render(scene,camera);frame=requestAnimationFrame(render);
  }
  el('.a8-loading').hidden=true;updateDrawControls();frame=requestAnimationFrame(render);
