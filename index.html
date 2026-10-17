@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v47 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v48 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -99,7 +99,7 @@
     <div class="a8-jpc-legend" hidden aria-label="JPCの入賞回数ごとの星の色">
      <span><b style="color:#ffffff">★</b>0球</span><span><b style="color:#358bff">★</b>1球</span>
      <span><b style="color:#52ff7a">★</b>2球</span><span><b style="color:#ffe438">★</b>3球</span>
-     <span><b style="color:#d4b0ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球：リーチ（虹）</span><span>6球：JACKPOT（暫定）</span>
+     <span><b style="color:#d4b0ff">★</b>4球</span><span><b style="color:#ff4141">★</b>5球以上</span><span>24ポケット入賞：リーチ（残りマスが虹）</span><span>全25ポケット入賞：JACKPOT</span>
     </div></div>
    <button type="button" class="a8-primary a8-start" data-action="start">8球抽選を開始</button>
    <div class="a8-jpc-meter" hidden aria-label="JPCの70球発射進捗" role="progressbar" aria-valuemin="0" aria-valuemax="70" aria-valuenow="0"><div class="a8-jpc-track"><div data-jpc-fill></div></div><span data-jpc-progress>0 / 70 球 発射</span></div>
@@ -66777,8 +66777,10 @@ function startAnima8(){
  const panels=[],ballViews=new Map(),hitTimes=Array(25).fill(-100),jpcCounts=Array(25).fill(0);
  const JPC_COLORS=['#ffffff','#358bff','#52ff7a','#ffe438','#d4b0ff','#ff4141'];
  const jpcTints=JPC_COLORS.map(x=>new THREE.Color(x));
- // Provisional JPC thresholds: five hits reach, six hits jackpot.
- const JPC_REACH=5,JPC_JACKPOT=6;
+ // Reach: 24 distinct occupied pockets; jackpot: all 25 occupied.
+ function jpcFilledCount(){return jpcCounts.reduce((n,count)=>n+(count>0?1:0),0);}
+ function jpcReachPocket(){return jpcFilledCount()===24?jpcCounts.findIndex(count=>count===0):-1;}
+ function recordJpcHit(i){jpcCounts[i]++;if(jpcFilledCount()===25)registerJackpot(i);}
  let jackpotPocket=-1;
  const jackpotLetters=new Map(),jpcRainbow=new THREE.Color();
  const jpcRound=()=>Math.min(3,Math.floor(Math.max(0,physics.serial-1)/20));
@@ -66855,12 +66857,12 @@ function startAnima8(){
  const slopeColor=new THREE.Color(),slopeRGB=[0,0,0];let slopeStarted=0,slopeStopped=0;
  function updateSlopeLights(){
   if(draw.mode==='jpc'){
-   const t=physics.time,round=jpcRound(),active=draw.state!=='ready',angle=physics.angle;
+   const t=physics.time,round=jpcRound(),active=draw.state!=='ready',angle=physics.angle,reachIndex=jpcReachPocket();
    for(let i=0;i<25;i++)for(let c=0;c<3;c++)for(let j=0;j<15;j++){
     const u=(i+(c-1)*.28)/25,r=j/14,k=i*45+c*15+j;
     // Stationary slope LEDs track the rotating pocket's outward radial line.
     const pocket=((Math.round((angle/TAU-u)*25)%25)+25)%25;
-    const reach=jpcCounts[pocket]>=JPC_REACH;
+    const reach=pocket===reachIndex;
     const speed=.10+round*.075,fan=.5+.5*Math.cos(TAU*(u*(round+1)-t*speed+r*.22));
     const chase=Math.pow(Math.max(0,Math.cos(TAU*(r-t*(.55+round*.28)+u*(round+1)))),10-round);
     const sparkle=round>1?Math.pow(Math.max(0,Math.sin(i*7.1+c*3.7+j*2.3+t*(4+round))),18)*.35:0;
@@ -67077,7 +67079,7 @@ function startAnima8(){
  function updateCount(){
   el('[data-count]').textContent=draw.mode==='jpc'?`JPC 入賞 ${physics.hits.length} / 発射 ${physics.serial} / 70`:`入賞 ${physics.hits.length} / 投入 ${physics.serial}`;
   const meter=el('.a8-jpc-meter');meter.setAttribute('aria-valuenow',String(physics.serial));
-  el('[data-jpc-progress]').textContent=`ROUND ${jpcRound()+1} / 4 · ${physics.serial} / 70 球 発射`;
+  el('[data-jpc-progress]').textContent=`ROUND ${jpcRound()+1} / 4 · ${physics.serial} / 70 球 発射 · ${jpcFilledCount()} / 25 ポケット`;
   el('[data-jpc-fill]').style.width=`${Math.min(100,physics.serial/70*100)}%`;
  }
  function updatePocketBadge(i){
@@ -67115,13 +67117,13 @@ function startAnima8(){
   el('[data-mode-detail]').textContent=jpc?'70球を1秒間隔で発射。入賞球はすぐ回収し、各ポケットの星色が入賞回数で変わります':eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
   el('.a8-jpc-legend').hidden=!jpc;el('.a8-jpc-meter').hidden=!jpc;
   if(draw.state==='ready')status.textContent=jpc?'JPC待機中 · 25ポケットの星が白く点滅':'抽選開始を押してください';
-  if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?'70球JPCが終了しました':eight?'8球の抽選が終了しました':'連続抽選を停止しました';
+  if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?(jackpotPocket>=0?'JACKPOT！ 全25ポケット入賞':jpcReachPocket()>=0?`JPC終了 · ${jpcReachPocket()+1}番リーチ（24 / 25）`:`70球JPC終了 · ${jpcFilledCount()} / 25 ポケット入賞`):eight?'8球の抽選が終了しました':'連続抽選を停止しました';
   if(draw.state==='draining')status.textContent='投入停止 · 残りのボールを抽選中';
  }
  draw.onLaunch=addBallView;
  draw.onReset=()=>{clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
  draw.onState=state=>{if(state==='running')slopeStarted=physics.time;if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
- physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){jpcCounts[hit.pocket-1]++;if(jpcCounts[hit.pocket-1]>=JPC_JACKPOT)registerJackpot(hit.pocket-1);}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcCounts[hit.pocket-1]>=JPC_REACH?`${hit.pocket}番 リーチ！`:`${hit.pocket}番に入賞`;updateCount();};
+ physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc')recordJpcHit(hit.pocket-1);const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
  physics.onFault=id=>{status.textContent=`${id}球目が盤外へ出ました。リセットして調整できます`;};
  function setPaused(value){paused=value;const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
  function startOrStop(){if(draw.state==='running'){draw.stop();}else if(draw.state!=='draining'){setPaused(false);draw.start();}}
@@ -67147,7 +67149,7 @@ function startAnima8(){
   panels.forEach((p,i)=>{
    if(draw.mode==='jpc'){
     // Star silhouettes blink, while their hue is fixed by real per-pocket hit counts.
-    const n=jpcCounts[i],rainbow=n>=JPC_REACH||jackpotLetters.has(i),tint=rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
+    const n=jpcCounts[i],rainbow=i===jpcReachPocket()||jackpotLetters.has(i),tint=rainbow?jpcRainbow.setHSL((physics.time*.30+i*.065)%1,1,.62):jpcTints[Math.min(n,5)];
     const wave=.5+.5*Math.sin(physics.time*TAU*.85-(n===0?0:i*.19));
     const pulse=.12+.88*wave*wave;
     p.material.uniforms.lightTint.value.copy(tint);
