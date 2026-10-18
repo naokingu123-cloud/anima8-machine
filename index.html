@@ -83,7 +83,7 @@
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v55 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v56 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -103,8 +103,8 @@
     </div></div>
    <div class="a8-jpc-aim" hidden style="margin:0 0 12px;padding:10px;border:1px solid var(--a8-line);border-radius:9px">
     <label class="a8-check"><input type="checkbox" id="a8-jpc-aim">JP狙い（試作）</label>
-    <small>抽選中の結果を使い、発射を最大2秒待って空きポケットを狙います。JPの保証はありません。</small>
-    <p data-aim-status style="margin:5px 0 0;font-size:12px;color:var(--a8-muted)">通常の1秒間隔</p>
+    <small>球同士の接近と入賞結果を参考に、発射を最大2秒待って空きを狙います。JPの保証はありません。</small>
+    <p data-aim-status style="margin:5px 0 0;font-size:12px;color:var(--a8-muted)">通常：およそ1秒間隔</p>
    </div>
    <button type="button" class="a8-primary a8-start" data-action="start">8球抽選を開始</button>
    <div class="a8-jpc-meter" hidden aria-label="JPCの70球発射進捗" role="progressbar" aria-valuemin="0" aria-valuemax="70" aria-valuenow="0"><div class="a8-jpc-track"><div data-jpc-fill></div></div><span data-jpc-progress>0 / 70 球 発射</span></div>
@@ -66377,7 +66377,7 @@ function installMeshContactManifold(world){
 class RoulettePhysics{
  constructor(C,options={}){
   this.C=C;this.settings={rpm:3.2,speed:7.35*1.2,ballSize:1,interval:1.0,bounce:MOTION.bounce,ballBounce:.98,stopperBounce:CONTACT.stopperBounce,friction:MOTION.friction,rolling:MOTION.rolling,gravityScale:MOTION.gravityScale,retain:true,...options};
-  this.geometry=makeGeometry();this.time=0;this.angle=0;this.seed=options.seed||8013;this.serial=0;this.balls=[];this.hits=[];this.occupied=Array(25).fill(false);this.holds=[];this.faults=0;
+  this.ballContactPairs=new Set();this.geometry=makeGeometry();this.time=0;this.angle=0;this.seed=options.seed||8013;this.serial=0;this.balls=[];this.hits=[];this.occupied=Array(25).fill(false);this.holds=[];this.faults=0;
   this.world=new C.World({gravity:new C.Vec3(0,-9.81/DIM.metresPerUnit*this.settings.gravityScale,0)});this.world.solver.iterations=18;this.world.solver.tolerance=.0001;this.world.allowSleep=false;
   installMeshContactManifold(this.world);
   this.material=new C.Material('contact');this.ballMaterial=new C.Material('ball');
@@ -66417,19 +66417,39 @@ class RoulettePhysics{
    if(b.holdShape){b.holdShape.radius=b.radius;b.holdShape.updateBoundingSphereRadius();}}
   this.rotor.updateBoundingRadius();this.rotor.aabbNeedsUpdate=true;
  }
- launch(){
+ createLaunchSpec(jpc=false){
+  return {speed:this.settings.speed+(this.random()*2-1)*(jpc?.40:.25),angle:2.12+(this.random()*2-1)*(jpc?.05:.035),spin:jpc?1+(this.random()*2-1)*.06:1};
+ }
+ launchState(spec){
+  const radius=DIM.ball*this.settings.ballSize,r=DIM.outer-.30,a=spec.angle;
+  return {radius,position:polar(r,2.12,bowlHeight(r)+radius+.025),velocity:[-spec.speed*Math.cos(a)-.75*Math.sin(a),0,spec.speed*Math.sin(a)-.75*Math.cos(a)]};
+ }
+ launch(spec=null){
   if(this.active>=10||(this.settings.retain&&this.active+this.occupied.filter(Boolean).length>=25))return null;
   const radius=DIM.ball*this.settings.ballSize,C=this.C,body=new C.Body({mass:.065,shape:new C.Sphere(radius),material:this.ballMaterial,linearDamping:.007,angularDamping:.025});
   body.shapes[0].material=this.ballMaterial;
   // Cannon estimates body inertia from an AABB; use the actual solid sphere here.
   const inertia=.4*body.mass*radius*radius;
   body.inertia.set(inertia,inertia,inertia);body.invInertia.set(1/inertia,1/inertia,1/inertia);body.updateInertiaWorld(true);
-  const launchAngle=2.12,r=DIM.outer-.30;
-  body.position.set(...polar(r,launchAngle,bowlHeight(r)+radius+.025));
-  const speed=this.settings.speed+(this.random()*2-1)*.25,a=launchAngle+(this.random()*2-1)*.035;
-  body.velocity.set(-speed*Math.cos(a)-.75*Math.sin(a),0,speed*Math.sin(a)-.75*Math.cos(a));body.angularVelocity.set(body.velocity.z/radius,0,-body.velocity.x/radius);
-  const ball={id:++this.serial,body,radius,age:0,resolved:false,held:false,grounded:-1,onRotor:false,normal:new C.Vec3(0,1,0),removeAt:Infinity};
+  spec=spec||this.createLaunchSpec();const launch=this.launchState(spec);
+  body.position.set(...launch.position);body.velocity.set(...launch.velocity);body.angularVelocity.set(body.velocity.z/radius*spec.spin,0,-body.velocity.x/radius*spec.spin);
+  const ball={id:++this.serial,body,radius,launchSpec:{...spec},collisions:0,collisionImpulse:0,age:0,resolved:false,held:false,grounded:-1,onRotor:false,normal:new C.Vec3(0,1,0),removeAt:Infinity};
   this.balls.push(ball);this.world.addBody(body);return ball;
+ }
+ trackBallContacts(dt){
+  const active=new Map(this.balls.filter(b=>!b.resolved&&!b.dead).map(b=>[b.body.id,b])),pairs=new Set();
+  for(const contact of this.world.contacts){
+   const a=active.get(contact.bi.id),b=active.get(contact.bj.id);if(!a||!b)continue;
+   const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
+   const impulse=Math.abs(contact.multiplier||0)*dt;
+   if(impulse<.001)continue;
+   if(!pairs.has(key)&&!this.ballContactPairs.has(key)){
+    a.collisions++;b.collisions++;a.collisionImpulse+=impulse;b.collisionImpulse+=impulse;
+    this.onBallCollision?.({a:a.id,b:b.id,time:this.time,impulse});
+   }
+   pairs.add(key);
+  }
+  this.ballContactPairs=pairs;
  }
  step(dt=1/120){
   const C=this.C;
@@ -66443,7 +66463,7 @@ class RoulettePhysics{
    const rimRolling=b.onRotor&&Math.hypot(b.body.position.x,b.body.position.z)<DIM.inner?CONTACT.pocketRolling:1;
    if(l>1e-7){const torque=Math.min(1.4*b.body.mass*b.radius*this.settings.rolling*rimRolling,.4*b.body.mass*b.radius*b.radius*l/dt);b.body.torque.x-=tx/l*torque;b.body.torque.y-=ty/l*torque;b.body.torque.z-=tz/l*torque;}
   }
-  this.world.step(dt);
+  this.world.step(dt);this.trackBallContacts(dt);
   for(const b of this.balls)if(!b.resolved)for(const contact of this.world.contacts){
    const other=contact.bi===b.body?contact.bj:contact.bj===b.body?contact.bi:null;
    const sign=contact.bi===b.body?-1:1;
@@ -66468,7 +66488,7 @@ class RoulettePhysics{
       this.occupied[index]=true;this.world.removeBody(b.body);b.local=new C.Vec3(...polar(DIM.pocket,slot*TAU/25,deckHeight(DIM.pocket)-.14));q.vmult(b.local,b.body.position);
       const plug=new C.Sphere(b.radius);b.holdShape=plug;this.rotor.addShape(plug,b.local);this.holds.push(plug);this.rotor.updateBoundingRadius();this.rotor.aabbNeedsUpdate=true;
      }else {this.world.removeBody(b.body);b.dead=true;b.removeAt=this.time;}
-     const hit={ball:b.id,pocket:index+1,time:this.time,held:b.held};this.hits.push(hit);if(this.onHit)this.onHit(hit);
+     const hit={ball:b.id,pocket:index+1,time:this.time,held:b.held,collisions:b.collisions,collisionImpulse:b.collisionImpulse};this.hits.push(hit);if(this.onHit)this.onHit(hit);
     }
    }
    if(!b.resolved&&(b.body.position.y<-2.5||b.body.position.lengthSquared()>900||b.age>100)){
@@ -66503,7 +66523,7 @@ class RoulettePhysics{
  reset(){
   for(const b of this.balls)if(this.world.bodies.includes(b.body))this.world.removeBody(b.body);
   for(const shape of this.holds)this.rotor.removeShape(shape);this.holds=[];this.rotor.updateBoundingRadius();this.rotor.aabbNeedsUpdate=true;
-  this.balls=[];this.hits=[];this.occupied.fill(false);this.serial=0;this.faults=0;
+  this.balls=[];this.hits=[];this.occupied.fill(false);this.serial=0;this.faults=0;this.ballContactPairs.clear();
  }
 }
 
@@ -66515,10 +66535,10 @@ class DrawController{
  constructor(physics){this.physics=physics;this.mode='eight';this.state='ready';this.group=0;this.sent=0;this.next=0;this.waiting=false;physics.settings.retain=true;}
  setState(state){this.state=state;this.onState?.(state);}
  select(mode){if(!['eight','continuous','jpc'].includes(mode))throw new Error('Invalid draw mode');this.mode=mode;this.reset();}
- reset(){this.physics.reset();this.physics.settings.retain=this.mode==='eight';this.group=0;this.sent=0;this.next=this.physics.time;this.waiting=false;this.onReset?.();this.setState('ready');}
- start(){this.reset();this.setState('running');}
+ reset(){this.physics.reset();this.physics.settings.retain=this.mode==='eight';this.group=0;this.sent=0;this.next=this.physics.time;this.waiting=false;this.pendingLaunch=null;this.onReset?.();this.setState('ready');}
+ start(){this.reset();if(this.mode==='jpc')this.physics.seed=Math.floor(Math.random()*4294967296)>>>0;this.setState('running');}
  stop(){if(this.mode==='continuous'&&this.state==='running')this.setState(this.physics.active?'draining':'complete');}
- launch(){const ball=this.physics.launch();if(ball)this.onLaunch?.(ball);return ball;}
+ launch(spec=null){const ball=this.physics.launch(spec);if(ball)this.onLaunch?.(ball);return ball;}
  update(){
   const p=this.physics;
   if(this.state==='draining'){if(!p.active)this.setState('complete');return;}
@@ -66526,9 +66546,13 @@ class DrawController{
   if(this.mode==='continuous'){if(p.time>=this.next){if(this.launch())this.next=p.time+p.settings.interval;}return;}
   if(this.mode==='jpc'){
    if(this.sent>=70){if(!p.active)this.setState('complete');return;}
-   if(p.time>=this.next&&p.active<10&&(!this.canLaunchJpc||this.canLaunchJpc())&&this.launch()){
-    this.sent++;this.next=p.time+p.settings.interval;
-    if(this.sent>=70)this.onAllLaunched?.();
+   if(p.time>=this.next&&p.active<10){
+    // Draw one launch sample per ball and keep it fixed throughout timing selection.
+    if(!this.pendingLaunch)this.pendingLaunch=p.createLaunchSpec(true);
+    if((!this.canLaunchJpc||this.canLaunchJpc(this.pendingLaunch))&&this.launch(this.pendingLaunch)){
+     this.pendingLaunch=null;this.sent++;this.next=p.time+p.settings.interval*(.88+.24*p.random());
+     if(this.sent>=70)this.onAllLaunched?.();
+    }
    }
    return;
   }
@@ -66538,52 +66562,70 @@ class DrawController{
  }
 }
 
-// Online timing heuristic: observe actual outcomes, never preview or alter physics.
+// Lightweight online timing, using observed collisions and current moving balls.
+// The short linear proximity forecast is a risk estimate, not a full trajectory solver.
 class JpcLaunchPlanner{
  constructor(physics,counts){this.physics=physics;this.counts=counts;this.enabled=false;this.reset();}
- reset(){this.samples=[];this.flights=new Map();this.plan=null;this.lastTarget=-1;this.observed=0;this.revision=0;}
- recordLaunch(ball){
-  if(this.enabled)this.flights.set(ball.id,{phase:this.physics.angle,target:this.plan?.target??-1});
-  this.lastTarget=this.plan?.target??-1;this.plan=null;
+ reset(){this.samples=[];this.flights=new Map();this.plan=null;this.observed=0;this.revision=0;}
+ collisionRisk(spec,delay=0,ignoreId=-1){
+  const state=this.physics.launchState(spec);let clear=1;
+  for(const b of this.physics.balls){
+   if(b.resolved||b.dead||b.id===ignoreId)continue;
+   const v=b.body.velocity,p=b.body.position;
+   const rx=state.position[0]-p.x-v.x*delay,ry=state.position[1]-p.y-v.y*delay,rz=state.position[2]-p.z-v.z*delay;
+   const vx=state.velocity[0]-v.x,vy=state.velocity[1]-v.y,vz=state.velocity[2]-v.z,v2=vx*vx+vy*vy+vz*vz;
+   const t=v2>1e-8?Math.max(0,Math.min(.45,-(rx*vx+ry*vy+rz*vz)/v2)):0;
+   const gap=Math.hypot(rx+vx*t,ry+vy*t,rz+vz*t)-state.radius-b.radius;
+   // Distant forecasts are less certain; reconsider against live positions every 0.1s.
+   const risk=Math.exp(-((Math.max(0,gap)/.28)**2))/(1+delay*.6);
+   clear*=1-risk;
+  }
+  return 1-clear;
  }
+ recordLaunch(ball){
+  if(this.enabled)this.flights.set(ball.id,{phase:this.physics.angle,target:this.plan?.target??-1,spec:ball.launchSpec,traffic:Math.max(0,this.physics.active-1)});
+  this.plan=null;
+ }
+ recordCollision(id){const flight=this.flights.get(id);if(flight)flight.target=-1;this.revision++;}
  recordHit(hit){
   const flight=this.flights.get(hit.ball);this.flights.delete(hit.ball);
   if(!this.enabled||!flight)return;
-  // Pocket indices increase with positive rotor angle (reversed numbering).
   const tau=Math.PI*2,pitch=tau/25;
-  this.samples.push(((hit.pocket-1)*pitch-flight.phase+tau)%tau);
-  if(this.samples.length>32)this.samples.shift();
-  this.observed++;this.revision++;
+  this.samples.push({offset:((hit.pocket-1)*pitch-flight.phase+tau)%tau,spec:flight.spec,traffic:flight.traffic,collisions:hit.collisions||0});
+  if(this.samples.length>32)this.samples.shift();this.observed++;this.revision++;
  }
  recordFault(id){this.flights.delete(id);this.revision++;}
- choose(earliest,deadline){
+ choose(earliest,deadline,spec){
   const p=this.physics,tau=Math.PI*2,pitch=tau/25,w=p.settings.rpm*tau/60,counts=this.counts(),reserved=Array(25).fill(0);
   for(const flight of this.flights.values())if(flight.target>=0)reserved[flight.target]++;
-  const weights=counts.map((n,i)=>n===0?1/(1+.5*reserved[i]):0),span=Math.max(0,deadline-earliest),steps=Math.max(1,Math.ceil(span*60));
-  let best={time:earliest,target:-1,score:-Infinity,revision:this.revision};
+  const weights=counts.map((n,i)=>n===0?1/(1+.5*reserved[i]):0),span=Math.max(0,deadline-earliest),steps=Math.max(1,Math.ceil(span*30)),trained=this.samples.length>=3;
+  const clean=[0,0,.16,.68,.16,0,0],wide=[.08,.15,.18,.18,.18,.15,.08];
+  const neighbors=this.samples.map(sample=>({sample,similarity:1/(1+((sample.spec.speed-spec.speed)/.4)**2+((sample.spec.angle-spec.angle)/.05)**2+((sample.spec.spin-spec.spin)/.06)**2+Math.abs(sample.traffic-p.active)*.18)}));
+  let best={time:earliest,target:-1,score:-Infinity,risk:0,revision:this.revision,checked:p.time};
   for(let k=0;k<=steps;k++){
-   const time=earliest+span*k/steps,phase=p.angle+w*(time-p.time),votes=Array(25).fill(0);
-   for(const offset of this.samples){
-    const position=(phase+offset)/pitch,base=Math.floor(position),fraction=position-base;
-    // Smooth between pocket centers, with uncertainty on both neighboring pockets.
-    for(let delta=-1;delta<=1;delta++){
-     const index=((base+delta)%25+25)%25,weight=delta===0?.6:.2;
-     votes[index]+=weight*(1-fraction);votes[(index+1)%25]+=weight*fraction;
+   const time=earliest+span*k/steps,phase=p.angle+w*(time-p.time),risk=this.collisionRisk(spec,time-p.time),votes=Array(25).fill(0);let weightSum=0;
+   if(trained)for(const {sample,similarity} of neighbors){
+    const weight=similarity*(sample.collisions ? .35+.65*risk : 1-.35*risk),spread=sample.collisions?1:risk;
+    const position=(phase+sample.offset)/pitch,base=Math.floor(position),fraction=position-base;weightSum+=weight;
+    for(let delta=-3;delta<=3;delta++){
+     const index=((base+delta)%25+25)%25,kernel=(clean[delta+3]*(1-spread)+wide[delta+3]*spread)*weight;
+     votes[index]+=kernel*(1-fraction);votes[(index+1)%25]+=kernel*fraction;
     }
    }
    let reward=0,target=-1,targetVote=0;
    for(let i=0;i<25;i++){const vote=votes[i]*weights[i];reward+=vote;if(vote>targetVote){target=i;targetVote=vote;}}
-   const score=reward/this.samples.length-(time-earliest)*.01;
-   if(score>best.score+1e-9)best={time,target,score,revision:this.revision};
+   const score=(weightSum?reward/weightSum:0)-risk*.45-(time-earliest)*.01;
+   if(score>best.score+1e-9)best={time,target,score,risk,revision:this.revision,checked:p.time};
   }
   return best;
  }
- ready(baseTime){
-  if(!this.enabled||this.samples.length<3||this.counts().every(n=>n>0)){this.plan=null;return true;}
+ ready(baseTime,spec){
+  if(!this.enabled||this.counts().every(n=>n>0)){this.plan=null;return true;}
   const p=this.physics,deadline=baseTime+2;
-  // Replanning on a new result must never keep extending the wait.
-  if(p.time>=deadline||Math.abs(p.settings.rpm)<1e-6){this.plan=null;return true;}
-  if(!this.plan||this.plan.revision!==this.revision||p.time>this.plan.time+.025)this.plan=this.choose(p.time,deadline);
+  if(p.time>=deadline){this.plan=null;return true;}
+  if(!this.plan||this.plan.revision!==this.revision||p.time-this.plan.checked>=.1||p.time>this.plan.time+.025)this.plan=this.choose(p.time,deadline,spec);
+  // Check the actual immediate path again when the chosen launch time arrives.
+  if(p.time+1e-6>=this.plan.time&&this.collisionRisk(spec)>.55&&deadline-p.time>.05)this.plan=this.choose(p.time,deadline,spec);
   return p.time+1e-6>=this.plan.time;
  }
 }
@@ -67350,21 +67392,22 @@ function startAnima8(){
  }
  function updateAimStatus(){
   const node=el('[data-aim-status]');
-  const text=!launchPlanner.enabled?'通常の1秒間隔':draw.state==='complete'?'JP狙いの抽選が終了':jackpotPocket>=0?'JP達成 · 残りは通常発射':physics.serial>=70?'70球発射済み · 残りの入賞待ち':launchPlanner.observed<3?`補正用の入賞を収集中 ${launchPlanner.observed}/3`:launchPlanner.plan?.target>=0?`次の狙い：${launchPlanner.plan.target+1}番`:'空きポケットに合わせて発射タイミングを補正';
+  const text=!launchPlanner.enabled?'通常：およそ1秒間隔':draw.state==='complete'?'JP狙いの抽選が終了':jackpotPocket>=0?'JP達成 · 残りは通常発射':physics.serial>=70?'70球発射済み · 残りの入賞待ち':launchPlanner.plan?.risk>.35?'他の球との接近を避けるタイミングを調整中':launchPlanner.observed<3?`補正用の入賞を収集中 ${launchPlanner.observed}/3`:launchPlanner.plan?.target>=0?`次の狙い：${launchPlanner.plan.target+1}番`:'空きポケットに合わせて発射タイミングを補正';
   if(node.textContent!==text)node.textContent=text;
  }
  function updateDrawControls(){
   const running=draw.state==='running',eight=draw.mode==='eight',jpc=draw.mode==='jpc',start=el('[data-action=start]');
   start.disabled=((eight||jpc)&&running)||draw.state==='draining';
   start.textContent=running?(jpc?'JPC抽選中 · 70球':eight?'8球抽選中':'投入を止める'):(jpc?'70球JPCを開始':eight?'8球抽選を開始':'連続抽選を開始');
-  el('[data-mode-detail]').textContent=jpc?(launchPlanner.enabled?'70球。最初の入賞結果から空きポケットを狙い、発射間隔を通常より最大2秒延ばします':'70球を1秒間隔で発射。入賞球はすぐ回収し、各ポケットの星色が入賞回数で変わります'):eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
+  el('[data-mode-detail]').textContent=jpc?(launchPlanner.enabled?'70球。球同士の接近と入賞結果を参考に、通常の発射間隔から最大2秒待って空きを狙います':'70球を0.88〜1.12秒間隔で発射。勢いと向きにも小さなばらつきがあります'):eight?'8球の入賞後もボールを穴に残します':'入賞したボールを即回収して投入を続けます';
   el('.a8-jpc-legend').hidden=!jpc;el('.a8-jpc-meter').hidden=!jpc;el('.a8-jpc-aim').hidden=!jpc;
   el('#a8-jpc-aim').disabled=running||draw.state==='draining';updateAimStatus();
   if(draw.state==='ready')status.textContent=jpc?'JPC待機中 · 25ポケットの星が白く点滅':'抽選開始を押してください';
   if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?(jackpotPocket>=0?'JACKPOT！ 全25ポケット入賞':jpcReachPocket()>=0?`JPC終了 · ${jpcReachPocket()+1}番リーチ（24 / 25）`:`70球JPC終了 · ${jpcFilledCount()} / 25 ポケット入賞`):eight?'8球の抽選が終了しました':'連続抽選を停止しました';
   if(draw.state==='draining')status.textContent='投入停止 · 残りのボールを抽選中';
  }
- draw.canLaunchJpc=()=>launchPlanner.ready(draw.next);
+ draw.canLaunchJpc=spec=>launchPlanner.ready(draw.next,spec);
+ physics.onBallCollision=hit=>{launchPlanner.recordCollision(hit.a);launchPlanner.recordCollision(hit.b);};
  draw.onLaunch=ball=>{if(draw.mode==='jpc')launchPlanner.recordLaunch(ball);addBallView(ball);if(draw.mode==='jpc')jpcAudio.launch(physics.serial);};
  draw.onReset=()=>{launchPlanner.enabled=el('#a8-jpc-aim').checked;launchPlanner.reset();jpcAudio.reset();clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
  draw.onState=state=>{if(state==='running'){slopeStarted=physics.time;if(draw.mode==='jpc')jpcAudio.start();}if(state==='complete'&&draw.mode==='jpc')jpcAudio.complete(jpcFilledCount());if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
