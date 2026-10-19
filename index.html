@@ -81,9 +81,13 @@
 }
 @media(max-width:380px){#anima8-web-sim .a8-stage{height:min(50svh,400px);min-height:270px;}}
 @media(orientation:landscape) and (max-height:530px){#anima8-web-sim .a8-stage{height:calc(100svh - 85px);min-height:270px}}
+#anima8-web-sim .a8-audio{grid-column:1/-1;min-width:0}
+#anima8-web-sim .a8-youtube-wrap{margin:0 -4px}
+#anima8-web-sim .a8-youtube-wrap iframe{display:block;width:100%;min-width:200px;height:200px;border:0;border-radius:6px}
+#anima8-web-sim .a8-youtube-wrap[hidden],#anima8-web-sim [data-bgm-player][hidden]{display:none}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v56 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v57 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -113,7 +117,12 @@
     <div style="display:flex;flex-wrap:wrap;gap:12px"><label class="a8-check"><input type="checkbox" id="a8-voice" checked>実況ボイス</label><label class="a8-check"><input type="checkbox" id="a8-bgm" checked>BGM</label></div>
     <label for="a8-volume">音量 <input id="a8-volume" type="range" min="0" max="100" value="65" style="width:65%;vertical-align:middle"></label>
     <div class="a8-actions"><button type="button" data-bgm-play>BGMを再生 ♪</button><button type="button" data-audio-test>ボイステスト</button></div>
-    <audio data-bgm-player controls loop preload="auto" playsinline src="./bgm-round1.mp3" style="width:100%;height:36px" aria-label="BGMプレーヤー"></audio>
+    <label for="a8-music-source">BGM音源 <select id="a8-music-source"><option value="youtube" selected>実機BGM（YouTube）</option><option value="local">予備BGM（オリジナル）</option></select></label>
+    <div data-youtube-wrap class="a8-youtube-wrap">
+     <div id="a8-youtube-player" style="width:100%;min-height:200px;background:#000;border-radius:6px"></div>
+     <a data-youtube-source href="https://www.youtube.com/watch?v=t_Wp0Lliyb4" target="_blank" rel="noopener noreferrer" style="display:block;font-size:11px;line-height:1.5;color:var(--a8-accent);margin-top:6px">音源：アニマロッタ4 ビックJPC BGM（YouTube）</a>
+    </div>
+    <audio data-bgm-player controls loop preload="none" playsinline hidden src="./bgm-round1.mp3" style="width:100%;height:36px" aria-label="予備BGMプレーヤー"></audio>
     <small data-audio-hint style="line-height:1.5;color:var(--a8-muted)"></small>
    </section>
     <label class="a8-check"><input type="checkbox" id="a8-trails">ボールの軌跡</label>
@@ -66876,37 +66885,128 @@ const {RoulettePhysics,DIM,TAU,polar,lathe,bowlHeight,deckHeight,hubHeight,STOPP
 const {DrawController,JpcLaunchPlanner}=DRAW;
 const {PANEL_SIZE,numberPixels,starPixels,COUNTER_SIZE,counterPixels}=PIXELS;
 const {slopeLightRGB}=LIGHTS;
-// Original rendered MP3 soundtrack and Japanese speech; gesture-driven media playback.
+// Published YouTube videos, played through the visible official player.
+// Chapter positions are supplied by the JPC video's uploader.
+const JPC_YOUTUBE_TRACKS={
+ round1:{videoId:'t_Wp0Lliyb4',start:0,end:314,label:'第1ラウンド'},
+ round2:{videoId:'t_Wp0Lliyb4',start:314,end:676,label:'第2ラウンド'},
+ round3:{videoId:'t_Wp0Lliyb4',start:676,end:1026,label:'第3ラウンド'},
+ round4:{videoId:'t_Wp0Lliyb4',start:1026,end:1367,label:'第4ラウンド'},
+ reach:{videoId:'t_Wp0Lliyb4',start:1367,end:1485,label:'リーチ'},
+ jp:{videoId:'Y4XD7HhugQo',start:0,label:'JACKPOT'}
+};
+function createYouTubeJpcMusic(root,onChange){
+ let player=null,ready=false,wanted=false,playing=false,failed='',key='round1',applied='',disposed=false,timeout=null;
+ let musicVolume=65;
+ const sourceLink=root.querySelector('[data-youtube-source]');
+ function updateLink(){const t=JPC_YOUTUBE_TRACKS[key];sourceLink.href='https://www.youtube.com/watch?v='+t.videoId+'&t='+t.start+'s';sourceLink.textContent='音源：アニマロッタ4 '+t.label+'（YouTube）';}
+ function gain(){if(ready){player.setVolume(musicVolume);if(musicVolume>0)player.unMute();}}
+ function apply(){
+  if(!ready||disposed)return;
+  const t=JPC_YOUTUBE_TRACKS[key],clip={videoId:t.videoId,startSeconds:t.start};
+  if(t.end!==undefined)clip.endSeconds=t.end;
+  applied=key;gain();
+  if(wanted)player.loadVideoById(clip);else player.cueVideoById(clip);
+ }
+ function stop(){wanted=false;playing=false;if(ready)player.pauseVideo();onChange();}
+ function play(){
+  wanted=true;failed='';
+  if(ready){if(applied!==key)apply();else{gain();player.playVideo();}}
+  onChange();
+ }
+ function setTrack(next){if(next===key)return;key=next;playing=false;updateLink();apply();}
+ function state(event){
+  if(disposed)return;
+  playing=event.data===1;
+  if(playing){
+   if(document.hidden||root.querySelector('[data-youtube-wrap]').hidden){stop();return;}
+   wanted=true;failed='';
+  }
+  if(event.data===0&&wanted){applied='';apply();}
+  onChange(playing);
+ }
+ function init(){
+  if(disposed||player)return;
+  clearTimeout(timeout);
+  player=new window.YT.Player('a8-youtube-player',{
+   width:'100%',height:'200',videoId:JPC_YOUTUBE_TRACKS[key].videoId,
+   playerVars:{playsinline:1,controls:1,autoplay:0,origin:window.location.origin},
+   events:{onReady:()=>{if(disposed)return;ready=true;failed='';apply();onChange();},onStateChange:state,
+    onAutoplayBlocked:()=>{playing=false;failed='プレーヤーの▶をタップして音を出してください';onChange();},
+    onError:event=>{playing=false;failed='YouTubeを再生できません（'+event.data+'）。音源リンク、または「予備BGM」をお試しください';onChange();}}
+  });
+  timeout=setTimeout(()=>{if(!ready&&!disposed){failed='YouTubeの読み込みに時間がかかっています。音源リンク、または「予備BGM」をお試しください';onChange();}},15000);
+ }
+ updateLink();
+ if(window.YT&&window.YT.Player)init();
+ else{
+  const previous=window.onYouTubeIframeAPIReady;
+  window.onYouTubeIframeAPIReady=()=>{if(previous)previous();init();};
+  const script=document.createElement('script');script.src='https://www.youtube.com/iframe_api';script.async=true;
+  script.onerror=()=>{if(disposed)return;failed='YouTubeに接続できません。音源リンク、または「予備BGM」をお試しください';onChange();};
+  document.head.appendChild(script);
+  timeout=setTimeout(()=>{if(!ready&&!disposed){failed='YouTubeの読み込みに時間がかかっています。音源リンク、または「予備BGM」をお試しください';onChange();}},15000);
+ }
+ // Keep a chapter from naturally rolling into the next round during a long draw.
+ const loopTimer=setInterval(()=>{
+  if(!ready||!wanted||!playing||document.hidden)return;
+  const t=JPC_YOUTUBE_TRACKS[key],time=player.getCurrentTime(),end=t.end||player.getDuration();
+  if(end>0&&(time>=end-.35||time<t.start-1)){player.seekTo(t.start,true);player.playVideo();}
+ },250);
+ return {play,pause:stop,setTrack,setVolume:v=>{musicVolume=v;gain();},
+  get playing(){return playing;},get ready(){return ready;},get wanted(){return wanted;},get error(){return failed;},
+  reset:()=>{stop();key='round1';applied='';updateLink();apply();},
+  dispose:()=>{disposed=true;clearInterval(loopTimer);clearTimeout(timeout);if(player)player.destroy();}}
+}
+
 function createJpcAudio(root){
- const q=s=>root.querySelector(s),voiceBox=q('#a8-voice'),musicBox=q('#a8-bgm'),volume=q('#a8-volume'),hint=q('[data-audio-hint]'),player=q('[data-bgm-player]'),playButton=q('[data-bgm-play]');
+ const q=s=>root.querySelector(s),voiceBox=q('#a8-voice'),musicBox=q('#a8-bgm'),volume=q('#a8-volume'),hint=q('[data-audio-hint]'),player=q('[data-bgm-player]'),playButton=q('[data-bgm-play]'),source=q('#a8-music-source'),ytWrap=q('[data-youtube-wrap]');
  const synth=window.speechSynthesis,speechOK=!!(synth&&window.SpeechSynthesisUtterance);
- let mode='off',round=0,paused=false,ducked=false,utterance=null,previewTimer=null,playRequest=0;
+ let mode='off',round=0,paused=false,ducked=false,utterance=null,playRequest=0,yt=null,disposed=false;
  const said=new Set();
+ const useYoutube=()=>source.value==='youtube';
+ const trackKey=()=>mode==='jp'?'jp':mode==='reach'?'reach':'round'+(round+1);
+ const label=()=>JPC_YOUTUBE_TRACKS[trackKey()].label;
  function level(){return Number(volume.value)/100;}
- function gain(){player.volume=level()*(ducked?.35:1);}
- function showHint(){playButton.textContent=player.paused?'BGMを再生 ♪':'BGMを停止';hint.textContent=player.paused?'BGMを再生ボタン、または下の▶で再生できます':`BGM再生中 ♪ ${mode==='jp'?'JP':mode==='reach'?'リーチ':'ラウンド'+(round+1)}`;}
- function clearNotes(){player.pause();}
- function ensure(){gain();return true;}
+ function gain(){const value=level()*(ducked?.35:1);player.volume=value;if(yt)yt.setVolume(value*100);}
+ function showHint(){
+  if(disposed)return;
+  const active=useYoutube()?!!(yt&&(yt.playing||yt.wanted)):!player.paused;
+  playButton.textContent=active?'BGMを停止':'BGMを再生 ♪';
+  if(useYoutube()){
+   hint.textContent=yt&&yt.error?yt.error:yt&&yt.playing?'実機BGM再生中 ♪ '+label():yt&&yt.wanted?'プレーヤーの▶をタップすると再生できます':'実機BGM：再生ボタン、またはプレーヤーの▶をタップ';
+  }else hint.textContent=player.paused?'予備BGM：再生ボタン、または下の▶をタップ':'予備BGM再生中 ♪ '+label();
+ }
+ function clearNotes(){playRequest++;player.pause();if(yt)yt.pause();}
  function playMusic(){
-  if(paused||document.hidden||!musicBox.checked)return;
-  const request=++playRequest;gain();
-  const promise=player.play();
+  if(paused||document.hidden||!musicBox.checked||disposed)return;
+  gain();
+  if(useYoutube()){player.pause();yt.play();return;}
+  yt.pause();const request=++playRequest,promise=player.play();
   if(promise&&promise.catch)promise.catch(()=>{if(request===playRequest)hint.textContent='BGMを再生ボタン、または下の▶を押してください';});
  }
- function schedule(){if(mode!=='off')playMusic();}
  function changeMusic(value,r=round){
   const changed=mode!==value||round!==r;mode=value;round=r;
-  if(value==='off'){playRequest++;player.pause();player.currentTime=0;showHint();return;}
-  const name=value==='jp'?'jp':value==='reach'?'reach':'round'+(r+1),url='./bgm-'+name+'.mp3';
-  if(changed||player.getAttribute('src')!==url){player.setAttribute('src',url);player.load();}
-  if(musicBox.checked)playMusic();else player.pause();
+  if(value==='off'){clearNotes();player.currentTime=0;showHint();return;}
+  if(!changed)return;
+  yt.setTrack(trackKey());
+  const url='./bgm-'+trackKey()+'.mp3';
+  if(player.getAttribute('src')!==url){player.setAttribute('src',url);player.load();}
+  if(musicBox.checked)playMusic();else clearNotes();
+  showHint();
  }
- player.addEventListener('play',()=>{musicBox.checked=true;showHint();});
+ yt=createYouTubeJpcMusic(root,started=>{if(started){musicBox.checked=true;if(mode==='off'){mode='round';round=0;}}showHint();});
+ player.addEventListener('play',()=>{if(useYoutube()){player.pause();return;}musicBox.checked=true;showHint();});
  player.addEventListener('pause',showHint);
- player.addEventListener('error',()=>{hint.textContent='BGMの読込に失敗しました。ページを更新してお試しください';});
+ player.addEventListener('error',()=>{if(!useYoutube())hint.textContent='予備BGMの読込に失敗しました。ページを更新してお試しください';});
  playButton.addEventListener('click',()=>{
-  if(!player.paused){musicBox.checked=false;player.pause();showHint();}
-  else{musicBox.checked=true;paused=false;changeMusic(mode==='off'?'round':mode,round);}
+  const active=useYoutube()?yt.wanted:!player.paused;
+  if(active){musicBox.checked=false;clearNotes();showHint();}
+  else{musicBox.checked=true;paused=false;if(mode==='off')changeMusic('round',round);else playMusic();}
+ });
+ source.addEventListener('change',()=>{
+  clearNotes();ytWrap.hidden=!useYoutube();player.hidden=useYoutube();
+  if(mode!=='off'&&musicBox.checked)playMusic();showHint();
  });
  function stopSpeech(){if(synth)synth.cancel();utterance=null;ducked=false;gain();}
  function speak(text,priority=false){
@@ -66919,8 +67019,8 @@ function createJpcAudio(root){
   try{synth.speak(u);}catch{finish();hint.textContent='この端末ではボイスを再生できません';}
  }
  function announce(key,text,priority=false){if(said.has(key))return;said.add(key);speak(text,priority);}
- function reset(){if(previewTimer)clearTimeout(previewTimer);previewTimer=null;said.clear();paused=false;changeMusic('off');stopSpeech();}
- function start(){reset();ensure();changeMusic('round',0);announce('start','ジャックポットチャンス！ すべてのポケットを光らせよう！',true);}
+ function reset(){said.clear();paused=false;changeMusic('off');yt.reset();stopSpeech();}
+ function start(){reset();changeMusic('round',0);announce('start','ジャックポットチャンス！ すべてのポケットを光らせよう！',true);}
  function launch(serial){
   if(mode==='jp')return;
   const r=Math.min(3,Math.floor(Math.max(0,serial-1)/20));
@@ -66936,18 +67036,15 @@ function createJpcAudio(root){
   else if(filled===20)announce('20','いい感じ！ あと五つ！');
  }
  function complete(filled){if(filled===25)return;changeMusic('off');announce('end',filled===24?'惜しい！ あとひとつだったね。またチャレンジしてね！':'チャレンジ終了！ また一緒に挑戦しよう！',true);}
- function pause(value){paused=value;if(value){player.pause();stopSpeech();}else if(mode!=='off')playMusic();gain();}
+ function pause(value){paused=value;if(value){clearNotes();stopSpeech();}else if(mode!=='off')playMusic();gain();}
  voiceBox.addEventListener('change',()=>{if(!voiceBox.checked)stopSpeech();else speak('ボイス、オン！',true);});
- musicBox.addEventListener('change',()=>{if(!musicBox.checked){player.pause();gain();}else changeMusic(mode==='off'?'round':mode,round);});
+ musicBox.addEventListener('change',()=>{if(!musicBox.checked)clearNotes();else if(mode==='off')changeMusic('round',round);else playMusic();showHint();});
  volume.addEventListener('input',gain);
- q('[data-audio-test]').addEventListener('click',()=>{
-  ensure();speak('ジャックポットチャンス！ みんな、いくよ！',true);
-
- });
+ q('[data-audio-test]').addEventListener('click',()=>speak('ジャックポットチャンス！ みんな、いくよ！',true));
  const visibility=()=>{if(document.hidden){clearNotes();stopSpeech();}else if(mode!=='off')playMusic();};document.addEventListener('visibilitychange',visibility);
  if(!speechOK){voiceBox.checked=false;voiceBox.disabled=true;}
  showHint();
- function dispose(){reset();document.removeEventListener('visibilitychange',visibility);player.removeAttribute('src');player.load();}
+ function dispose(){reset();disposed=true;yt.dispose();document.removeEventListener('visibilitychange',visibility);player.removeAttribute('src');player.load();}
  return {start,launch,hit,complete,pause,reset,dispose};
 }
 
