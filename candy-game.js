@@ -1,5 +1,6 @@
 (function(global){
 'use strict';
+const SPECIAL_RATE=0.02;
 const SIZE=10,COLORS=['赤','黄','緑','青','紫'];
 const payoutTenths=n=>n>=4?n-3:0;
 function shuffle(a,random){for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
@@ -38,18 +39,23 @@ class Engine{
   return token===this.version;
  }
  fill(initial=false){
-  const numbers=initial?shuffle(Array.from({length:100},(_,i)=>i%25+1),this.random):null;
-  const pool=Array.from({length:25},(_,i)=>i+1).filter(n=>!this.drawn.has(n));let ni=0;
+  const fresh=[];
   // Existing tiles are stable. Each new tile is checked against its entire
   // orthogonal component, so L/T-shaped groups cannot appear on refill either.
   for(let r=SIZE-1;r>=0;r--)for(let c=0;c<SIZE;c++)if(!this.board[r][c]){
-   const tile={id:++this.uid,color:0,number:initial?numbers[ni++]:pool[Math.floor(this.random()*pool.length)]};
-   this.board[r][c]=tile;let valid=false;
+   const tile={id:++this.uid,color:0,number:null,special:this.random()<SPECIAL_RATE};
+   this.board[r][c]=tile;fresh.push(tile);let valid=false;
    for(const color of shuffle([0,1,2,3,4],this.random)){
     tile.color=color;
     if(!groups(this.board).some(g=>g.cells.some(([y,x])=>y===r&&x===c))){valid=true;break;}
    }
    if(!valid)throw new Error('補充する色を決められませんでした');
+  }
+  const present=new Set(this.board.flat().filter(t=>t.number!=null).map(t=>t.number));
+  const oldBlanks=shuffle(this.board.flat().filter(t=>t.number==null&&!fresh.includes(t)),this.random);
+  const blanks=[...oldBlanks,...shuffle(fresh,this.random)];
+  for(const n of shuffle(Array.from({length:25},(_,i)=>i+1),this.random)){
+   if(!this.seen.has(n)&&!present.has(n)){const tile=blanks.pop();if(tile)tile.number=n;}
   }
  }
  gravity(){
@@ -58,6 +64,17 @@ class Engine{
   }}
  }
  remove(cells){for(const [r,c] of cells)this.board[r][c]=null;}
+ resolveLinks(linked){
+  const colors=new Set(),cells=new Map();
+  for(const g of linked)for(const [r,c] of g.cells){
+   cells.set(r*SIZE+c,[r,c]);
+   if(this.board[r][c].special)colors.add(this.board[r][c].color);
+  }
+  if(colors.size)for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
+   if(this.board[r][c]&&colors.has(this.board[r][c].color))cells.set(r*SIZE+c,[r,c]);
+  }
+  return {cells:[...cells.values()],colors:[...colors]};
+ }
  async drain(){
   const token=this.version;this.busy=true;
   try{
@@ -71,9 +88,10 @@ class Engine{
     while(linked.length){
      depth++;let gain=0;
      for(const g of linked){this.history.push({ball,number,depth,color:g.color,size:g.size,tenths:g.tenths});gain+=g.tenths;}
-     this.totalTenths+=gain;this.emit('link',{number,ball,depth,groups:linked,gain});
+     const resolved=this.resolveLinks(linked);
+     this.totalTenths+=gain;this.emit('link',{number,ball,depth,groups:linked,gain,cells:resolved.cells,clearColors:resolved.colors});
      if(!await this.wait(550+Math.min(500,Math.max(...linked.map(g=>g.size))-4)*65,token))return;
-     this.remove(linked.flatMap(g=>g.cells));this.emit('remove',{number,ball});if(!await this.wait(150,token))return;
+     this.remove(resolved.cells);this.emit('remove',{number,ball});if(!await this.wait(150,token))return;
      this.gravity();this.emit('fall',{number,ball});if(!await this.wait(380,token))return;
      linked=groups(this.board);
     }
@@ -93,9 +111,9 @@ const SVG=[
  '<path d="M7 16q11-20 22 0z" fill="#deb5ff"/><path d="M8 18h20l-3 14H11z" fill="#b18bea"/><path d="M12 21l2 9m5-9v9m5-9l-2 9" stroke="#f3d7ff" stroke-width="2"/><circle cx="18" cy="7" r="3" fill="#ffe0f5"/>'
 ];
 function markup(){return `
- <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>番号で消して、落として、3つで消して、4つから配当。</p></div><div class="sweet-total"><small>合計配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
+ <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>3つで消して、4つから配当。色消しで大連鎖！</p></div><div class="sweet-total"><small>合計配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
  <div class="sweet-layout"><div class="sweet-play"><div class="sweet-balls" aria-label="8球の入賞番号"></div><div class="sweet-board-wrap"><div class="sweet-board" role="img" aria-label="10行10列のお菓子ブロック盤面"></div><div class="sweet-celebration" aria-hidden="true"></div></div><div class="sweet-status" role="status" aria-live="polite"></div></div>
- <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-demo>盤面だけで8球おためし</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>LINKごとの配当</h3><div class="sweet-odds">${[3,4,5,6,7,8,9].map(n=>`<span>${n}LINK <b>×${((n-3)/10).toFixed(1)}</b></span>`).join('')}</div><p class="sweet-rule">10LINK以降も1個につき＋0.1倍。<br>連鎖倍率は加えず、すべて合算します。</p><div class="sweet-receipt"><h3>配当の内訳</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が3つ以上つながると消去。3LINKは配当0倍、4LINKから配当がつきます。連鎖が終わってから100マスへ補充します。</p><p>初期番号は1〜25が各4個。補充番号は、まだ入賞していない番号から選びます。初期配置・補充で3LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
+ <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-demo>盤面だけで8球おためし</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>配当表</h3><table class="sweet-paytable"><thead><tr><th scope="col">LINK</th><th scope="col">配当</th></tr></thead><tbody>${Array.from({length:10},(_,i)=>i+3).map(n=>`<tr><th scope="row">${n}LINK</th><td>×${(payoutTenths(n)/10).toFixed(1)}</td></tr>`).join('')}</tbody></table><p class="sweet-rule">13LINK以降も1個につき＋0.1倍。<br>連鎖倍率は加えず、すべて合算します。</p><div class="sweet-receipt"><h3>配当の内訳</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が3つ以上つながると消去。3LINKは配当0倍、4LINKから配当がつきます。連鎖が終わってから100マスへ補充します。</p><p>番号は1〜25を各1マスだけに付けます。連鎖で番号が消えた場合は、補充時に未入賞番号だけを付け直します。色消しマスは約2%で出現。LINKで消えると同色を盤面全体から消します（番号HITだけでは発動しません）。追加消去に別配当はなく、元のLINK配当を合算します。初期配置・補充で3LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
 function mount(root){
  root.innerHTML=markup();const q=s=>root.querySelector(s),boardNode=q('.sweet-board'),status=q('.sweet-status'),celebration=q('.sweet-celebration');
  let engine,mode='eight',source='machine',paused=false,demoToken=0,audio=null,sequence=0,machineRunning=false;
@@ -117,8 +135,11 @@ function mount(root){
   const alive=new Set();
   for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
    const t=e.board[r][c];if(!t)continue;alive.add(t.id);let el=elements.get(t.id);
-   if(!el){el=document.createElement('div');el.className='sweet-tile sweet-color-'+t.color;el.innerHTML=`<svg viewBox="0 0 36 36" aria-hidden="true">${SVG[t.color]}</svg><b>${t.number}</b>`;el.setAttribute('aria-label',`${COLORS[t.color]}・${t.number}番`);boardNode.append(el);elements.set(t.id,el);el.style.top=event.phase==='refill'?'-30%':`calc(${r*10}% + 2px)`;}
-   el.style.left=`calc(${c*10}% + 2px)`;el.classList.toggle('sweet-hit',event.phase==='hit'&&highlighted.has(t.id));el.classList.toggle('sweet-link',event.phase==='link'&&highlighted.has(t.id));
+   if(!el){el=document.createElement('div');el.className='sweet-tile sweet-color-'+t.color;el.innerHTML=`<svg viewBox="0 0 36 36" aria-hidden="true">${SVG[t.color]}</svg><b>${t.number==null?'':t.number}</b>`;boardNode.append(el);elements.set(t.id,el);el.style.top=event.phase==='refill'?'-30%':`calc(${r*10}% + 2px)`;}
+   el.classList.toggle('sweet-color-clear',!!t.special);el.querySelector('b').textContent=t.number==null?'':t.number;
+   el.setAttribute('aria-label',COLORS[t.color]+(t.special?'・色消し':'')+(t.number==null?'':'・'+t.number+'番'));
+   if(t.special&&!el.querySelector('.sweet-special-label')){const badge=document.createElement('span');badge.className='sweet-special-label';badge.textContent='色消し';el.append(badge);}
+   el.style.left=`calc(${c*10}% + 2px)`;if(event.phase!=='queued'){el.classList.toggle('sweet-hit',event.phase==='hit'&&highlighted.has(t.id));el.classList.toggle('sweet-link',event.phase==='link'&&highlighted.has(t.id));}
    const target=`calc(${r*10}% + 2px)`;
    if(event.phase==='refill'&&el.style.top==='-30%')requestAnimationFrame(()=>{if(elements.has(t.id))el.style.top=target;});else el.style.top=target;
   }
@@ -136,10 +157,11 @@ function mount(root){
   if(event.phase==='fall')status.textContent='お菓子が落下中…';
   if(event.phase==='refill')status.textContent='連鎖終了！ 3LINKを作らず100マスへ補充';
   if(event.phase==='link'){
-   const max=Math.max(...event.groups.map(g=>g.size));sequence++;celebration.dataset.tier=max>=10?'grand':max>=7?'big':'normal';celebration.innerHTML=`<strong>${max} LINK!</strong><span>${event.depth}連鎖　＋${(event.gain/10).toFixed(1)}倍</span>`+Array.from({length:Math.min(45,max*3)},(_,i)=>{const a=i*2.4,d=70+(i%4)*24;return `<i style="--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;--rot:${i*79}deg;background:hsl(${i*47} 85% 75%)"></i>`;}).join('');
+   const cleared=event.clearColors||[];
+   const max=Math.max(...event.groups.map(g=>g.size));sequence++;celebration.dataset.tier=max>=10?'grand':max>=7?'big':'normal';celebration.innerHTML=`<strong>${cleared.length?'COLOR CLEAR!':max+' LINK!'}</strong><span>${event.depth}連鎖　＋${(event.gain/10).toFixed(1)}倍</span>`+Array.from({length:Math.min(45,max*3)},(_,i)=>{const a=i*2.4,d=70+(i%4)*24;return `<i style="--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;--rot:${i*79}deg;background:hsl(${i*47} 85% 75%)"></i>`;}).join('');
    celebration.classList.remove('show');void celebration.offsetWidth;celebration.classList.add('show');boardNode.dataset.tier=celebration.dataset.tier;
    const thisSequence=sequence;setTimeout(()=>{if(sequence===thisSequence){celebration.classList.remove('show');delete boardNode.dataset.tier;}},900);
-   status.textContent=event.groups.map(g=>`${COLORS[g.color]} ${g.size}LINK`).join(' ＋ ')+` · ${event.depth}連鎖`;sound(max,event.depth);
+   status.textContent=(cleared.length?cleared.map(c=>COLORS[c]).join('・')+'の色消し！ ':'')+event.groups.map(g=>`${COLORS[g.color]} ${g.size}LINK`).join(' ＋ ')+` · ${event.depth}連鎖`;sound(max,event.depth);
   }
   if(event.phase==='complete'){status.textContent=`8球終了！ 合計配当 ${(e.totalTenths/10).toFixed(1)}倍`;q('[data-sweet-demo]').disabled=machineRunning;}
   if(event.phase==='error')status.textContent=event.message+'。抽選をリセットしてください';
