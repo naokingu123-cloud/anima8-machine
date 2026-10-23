@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
-const {Engine,groups,payoutTenths}=require('./candy-game.js');
+const {Engine,groups,payoutTenths,chainTenths,payoutHundredths}=require('./candy-game.js');
 let seed=1820;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
 const fast={random,sleep:()=>Promise.resolve(),speed:100};
 async function done(e){while(!e.idle)await new Promise(r=>setImmediate(r));}
@@ -7,10 +7,17 @@ function board(){return Array.from({length:10},()=>Array(10).fill(null));}
 function tile(color,number=1){return {id:++seed,color,number};}
 (async()=>{
  assert.equal(payoutTenths(3),0,'3LINK has no payout');
- let colorEvent;let zero=new Engine({...fast,onEvent:ev=>{if(ev.phase==='link')colorEvent=ev;}});zero.board=board();zero.board[9][0]=tile(0,1);zero.board[9][1]=tile(0,1);zero.board[9][2]=tile(4,25);zero.board[8][2]=tile(0,1);assert.equal(groups(zero.board).length,0);zero.board[9][0].special=true;zero.board[9][9]=tile(0,null);zero.start();zero.enqueue(25);await done(zero);assert.deepEqual(zero.history.map(h=>[h.size,h.tenths]),[[3,0]]);assert.equal(zero.totalTenths,0);assert.equal(colorEvent.cells.length,4);assert.deepEqual(colorEvent.clearColors,[0]);assert.equal(groups(zero.board).length,0);
- assert.equal(payoutTenths(4)*3+payoutTenths(5)*4,11,'specified example is exactly 1.1x');
+ let colorEvent;let zero=new Engine({...fast,onEvent:ev=>{if(ev.phase==='link')colorEvent=ev;}});zero.board=board();zero.board[9][0]=tile(0,1);zero.board[9][1]=tile(0,1);zero.board[9][2]=tile(4,25);zero.board[8][2]=tile(0,1);assert.equal(groups(zero.board).length,0);zero.board[9][0].special=true;zero.board[9][9]=tile(0,null);zero.start();zero.enqueue(25);await done(zero);assert.deepEqual(zero.history.map(h=>[h.size,h.tenths]),[[3,0]]);assert.equal(zero.totalHundredths,0);assert.equal(colorEvent.cells.length,4);assert.deepEqual(colorEvent.clearColors,[0]);assert.equal(groups(zero.board).length,0);
+ assert.deepEqual([3,4,5,6,7,8,9,10,11,12,13].map(payoutTenths),[0,5,10,20,30,50,80,120,180,250,350]);
+ assert.deepEqual([0,1,4,5,6,7,8].map(chainTenths),[10,10,10,12,15,18,21]);
+ assert.equal(payoutHundredths(8,5),600);assert.equal(payoutHundredths(8,6),750);
+ const scoring=new Engine(fast);const record=(size,depth,ball)=>scoring.recordLinks([{color:0,size,tenths:payoutTenths(size)}],{number:ball,ball,depth});
+ record(8,1,1);assert.equal(scoring.totalHundredths,500);record(4,5,2);assert.equal(scoring.totalHundredths,600,'max LINK and chain can come from different balls');
+ record(5,6,2);assert.equal(scoring.totalHundredths,750);record(4,1,3);assert.equal(scoring.totalHundredths,750,'smaller repeats never add payout');
+ scoring.reset();assert.equal(scoring.maxLink,0);assert.equal(scoring.maxChain,0);assert.equal(scoring.totalHundredths,0);
+
  let b=board();for(let i=0;i<4;i++)b[i][i]=tile(0);assert.equal(groups(b).length,0,'diagonal is not connected');
- b=board();for(const [r,c] of [[0,0],[0,1],[1,1],[2,1],[2,2]])b[r][c]=tile(2);assert.equal(groups(b)[0].size,5);assert.equal(groups(b)[0].tenths,2,'L-shaped component awards once');
+ b=board();for(const [r,c] of [[0,0],[0,1],[1,1],[2,1],[2,2]])b[r][c]=tile(2);assert.equal(groups(b)[0].size,5);assert.equal(groups(b)[0].tenths,10,'L-shaped component is one maximal LINK');
  for(let i=0;i<30;i++){
   const e=new Engine(fast);assert.equal(groups(e.board).length,0);assert.equal(e.board.flat().length,100);
   for(let n=1;n<=25;n++)assert.equal(e.board.flat().filter(t=>t.number===n).length,1);
@@ -22,7 +29,7 @@ function tile(color,number=1){return {id:++seed,color,number};}
  assert.equal(groups(e.board).length,0);e.start();e.enqueue(25);await done(e);
  assert.equal(e.processed,1);assert.equal(events.find(x=>x.phase==='hit').cells.length,2,'one number removes every matching tile');
  assert.deepEqual(e.history.map(h=>[h.size,h.depth,h.tenths]),[[3,1,0],[3,2,0]],'zero-payout clears continue into a second cascade');
- assert.equal(e.totalTenths,0);assert.equal(events.filter(x=>x.phase==='refill').length,1);
+ assert.equal(e.totalHundredths,0);assert.equal(events.filter(x=>x.phase==='refill').length,1);
  assert.equal(events.filter(x=>x.phase==='link').length,2);
  // A special in a linked component removes isolated matching colors without inventing extra LINK payout.
  const special=new Engine(fast);special.board=board();
@@ -44,12 +51,12 @@ function tile(color,number=1){return {id:++seed,color,number};}
   }}});
   engine.start();for(let n=1;n<=8;n++)assert(engine.enqueue(n));assert(!engine.enqueue(1));assert(!engine.enqueue(9));
   await done(engine);assert.deepEqual(seen,[1,2,3,4,5,6,7,8],'3+2 arriving quickly remain five separate operations');
-  assert.equal(engine.processed,8);assert.equal(engine.running,false);assert.equal(engine.totalTenths,engine.history.reduce((s,h)=>s+h.tenths,0));
+  assert.equal(engine.processed,8);assert.equal(engine.running,false);assert.equal(engine.totalHundredths,payoutHundredths(Math.max(0,...engine.history.map(h=>h.size)),Math.max(0,...engine.history.map(h=>h.depth))));
  }
- let release;const cancel=new Engine({random,sleep:()=>new Promise(r=>release=r)});cancel.start();cancel.enqueue(1);cancel.reset();release();await new Promise(r=>setImmediate(r));assert.equal(cancel.processed,0);assert.equal(cancel.totalTenths,0);assert.equal(cancel.history.length,0);assert.equal(cancel.idle,true,'reset cancels old asynchronous transaction');
+ let release;const cancel=new Engine({random,sleep:()=>new Promise(r=>release=r)});cancel.start();cancel.enqueue(1);cancel.reset();release();await new Promise(r=>setImmediate(r));assert.equal(cancel.processed,0);assert.equal(cancel.totalHundredths,0);assert.equal(cancel.history.length,0);assert.equal(cancel.idle,true,'reset cancels old asynchronous transaction');
  const index=fs.readFileSync(__dirname+'/index.html','utf8');for(const m of index.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g))new vm.Script(m[1]);
  const ctx={};vm.createContext(ctx);vm.runInContext(index.slice(index.indexOf('class DrawController{'),index.indexOf('// Lightweight online timing'))+';this.Controller=DrawController;',ctx);
  const physics={settings:{},time:10,active:0,reset(){},launch(){return {};}};const draw=new ctx.Controller(physics);let settled=false;draw.canAdvance=()=>settled;draw.state='running';draw.waiting=true;draw.update();assert.equal(draw.group,0,'3-ball group waits for payout/refill');settled=true;draw.update();assert.equal(draw.group,1,'next 2-ball group starts only after board is stable');
  new vm.Script(fs.readFileSync(__dirname+'/candy-game.js','utf8'));
- console.log('PASS: color clear, HIT does not trigger special, unique sparse numbers, no admitted-number refill, 3LINK clear with zero payout, no initial/refill 3LINK, payout example, 4-neighbor groups, one award per component, 30 initial layouts, true 2-step cascade, no mid-chain refill, 35 full 8-ball games, queued 3+2, no refill links, integer sum, duplicate rejection, reset cancellation, JS syntax');
+ console.log('PASS: color clear, HIT does not trigger special, unique sparse numbers, no admitted-number refill, 3LINK clear with zero payout, no initial/refill 3LINK, maximum-LINK times maximum-chain payout, 4/5/6-chain thresholds, no additive payout, 4-neighbor groups, one award per component, 30 initial layouts, true 2-step cascade, no mid-chain refill, 35 full 8-ball games, queued 3+2, no refill links, integer sum, duplicate rejection, reset cancellation, JS syntax');
 })().catch(e=>{console.error(e);process.exitCode=1;});

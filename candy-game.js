@@ -2,7 +2,11 @@
 'use strict';
 const SPECIAL_RATE=0.02;
 const SIZE=10,COLORS=['赤','黄','緑','青','紫'];
-const payoutTenths=n=>n>=4?n-3:0;
+const BASE_TENTHS=[0,0,0,0,5,10,20,30,50,80,120,180,250];
+const payoutTenths=n=>n<4?0:n<=12?BASE_TENTHS[n]:250+(n-12)*100;
+const chainTenths=n=>n<5?10:12+(n-5)*3;
+const payoutHundredths=(maxLink,maxChain)=>payoutTenths(maxLink)*chainTenths(maxChain);
+const formatPayout=hundredths=>(hundredths/100).toFixed(2).replace(/0$/,'');
 function shuffle(a,random){for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function groups(board){
  const seen=new Set(),found=[];
@@ -24,7 +28,7 @@ class Engine{
  }
  emit(phase,detail={}){this.phase=phase;this.onEvent({phase,...detail},this);}
  reset(){
-  this.version++;this.queue=[];this.seen=new Set();this.drawn=new Set();this.history=[];this.totalTenths=0;this.processed=0;this.accepted=0;this.busy=false;this.running=false;this.paused=false;
+  this.version++;this.queue=[];this.seen=new Set();this.drawn=new Set();this.history=[];this.totalHundredths=0;this.maxLink=0;this.maxChain=0;this.processed=0;this.accepted=0;this.busy=false;this.running=false;this.paused=false;
   this.board=Array.from({length:SIZE},()=>Array(SIZE).fill(null));this.fill(true);this.emit('ready');
  }
  start(){this.running=true;this.emit('waiting');}
@@ -64,6 +68,13 @@ class Engine{
   }}
  }
  remove(cells){for(const [r,c] of cells)this.board[r][c]=null;}
+ recordLinks(linked,{ball,number,depth}){
+  const before=this.totalHundredths;
+  for(const g of linked){this.history.push({ball,number,depth,color:g.color,size:g.size,tenths:g.tenths});this.maxLink=Math.max(this.maxLink,g.size);}
+  this.maxChain=Math.max(this.maxChain,depth);
+  this.totalHundredths=payoutHundredths(this.maxLink,this.maxChain);
+  return this.totalHundredths-before;
+ }
  resolveLinks(linked){
   const colors=new Set(),cells=new Map();
   for(const g of linked)for(const [r,c] of g.cells){
@@ -86,10 +97,9 @@ class Engine{
     this.gravity();this.emit('fall',{number,ball});if(!await this.wait(380,token))return;
     let linked=groups(this.board);
     while(linked.length){
-     depth++;let gain=0;
-     for(const g of linked){this.history.push({ball,number,depth,color:g.color,size:g.size,tenths:g.tenths});gain+=g.tenths;}
+     depth++;const gain=this.recordLinks(linked,{ball,number,depth});
      const resolved=this.resolveLinks(linked);
-     this.totalTenths+=gain;this.emit('link',{number,ball,depth,groups:linked,gain,cells:resolved.cells,clearColors:resolved.colors});
+     this.emit('link',{number,ball,depth,groups:linked,gain,cells:resolved.cells,clearColors:resolved.colors});
      if(!await this.wait(550+Math.min(500,Math.max(...linked.map(g=>g.size))-4)*65,token))return;
      this.remove(resolved.cells);this.emit('remove',{number,ball});if(!await this.wait(150,token))return;
      this.gravity();this.emit('fall',{number,ball});if(!await this.wait(380,token))return;
@@ -111,9 +121,9 @@ const SVG=[
  '<path d="M7 16q11-20 22 0z" fill="#deb5ff"/><path d="M8 18h20l-3 14H11z" fill="#b18bea"/><path d="M12 21l2 9m5-9v9m5-9l-2 9" stroke="#f3d7ff" stroke-width="2"/><circle cx="18" cy="7" r="3" fill="#ffe0f5"/>'
 ];
 function markup(){return `
- <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>3つで消して、4つから配当。色消しで大連鎖！</p></div><div class="sweet-total"><small>合計配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
+ <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>3つで消して、4つから配当。色消しで大連鎖！</p></div><div class="sweet-total"><small>最終配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
  <div class="sweet-layout"><div class="sweet-play"><div class="sweet-balls" aria-label="8球の入賞番号"></div><div class="sweet-board-wrap"><div class="sweet-board" role="img" aria-label="10行10列のお菓子ブロック盤面"></div><div class="sweet-celebration" aria-hidden="true"></div></div><div class="sweet-status" role="status" aria-live="polite"></div></div>
- <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-demo>盤面だけで8球おためし</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>配当表</h3><table class="sweet-paytable"><thead><tr><th scope="col">LINK</th><th scope="col">配当</th></tr></thead><tbody>${Array.from({length:10},(_,i)=>i+3).map(n=>`<tr><th scope="row">${n}LINK</th><td>×${(payoutTenths(n)/10).toFixed(1)}</td></tr>`).join('')}</tbody></table><p class="sweet-rule">13LINK以降も1個につき＋0.1倍。<br>連鎖倍率は加えず、すべて合算します。</p><div class="sweet-receipt"><h3>配当の内訳</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が3つ以上つながると消去。3LINKは配当0倍、4LINKから配当がつきます。連鎖が終わってから100マスへ補充します。</p><p>番号は1〜25を各1マスだけに付けます。連鎖で番号が消えた場合は、補充時に未入賞番号だけを付け直します。色消しマスは約2%で出現。LINKで消えると同色を盤面全体から消します（番号HITだけでは発動しません）。追加消去に別配当はなく、元のLINK配当を合算します。初期配置・補充で3LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
+ <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-real>抽選開始</button><button type="button" data-sweet-demo>8球おためし</button><button type="button" data-sweet-reset>リセット</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>基礎配当 · 最大LINK</h3><table class="sweet-paytable"><thead><tr><th scope="col">LINK</th><th scope="col">配当</th></tr></thead><tbody>${Array.from({length:10},(_,i)=>i+3).map(n=>`<tr><th scope="row">${n}LINK</th><td>×${(payoutTenths(n)/10).toFixed(1)}</td></tr>`).join('')}</tbody></table><div class="sweet-chain-table" aria-label="最大連鎖の倍率"><strong>最大連鎖倍率</strong><span>1〜4連鎖 ×1.0</span><span>5連鎖 ×1.2</span><span>6連鎖 ×1.5</span><span>7連鎖 ×1.8</span><span>8連鎖 ×2.1</span><span>以降 ＋0.3</span></div><p class="sweet-rule">13LINK以降 ＋10倍／個</p><div class="sweet-receipt"><h3>最大LINK × 最大連鎖倍率</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が3つ以上つながると消去。3LINKは配当0倍、4LINKから配当がつきます。連鎖が終わってから100マスへ補充します。</p><p>番号は1〜25を各1マスだけに付けます。連鎖で番号が消えた場合は、補充時に未入賞番号だけを付け直します。色消しマスは約2%で出現。LINKで消えると同色を盤面全体から消します（番号HITだけでは発動しません）。追加の色消し数はLINK数に加算しません。8球を通した最大LINKの基礎配当と、1回のHITで続いた最大連鎖の倍率を掛けます。LINKごとの配当は合算しません。初期配置・補充で3LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
 function mount(root){
  root.innerHTML=markup();const q=s=>root.querySelector(s),boardNode=q('.sweet-board'),status=q('.sweet-status'),celebration=q('.sweet-celebration');
  let engine,mode='eight',source='machine',paused=false,demoToken=0,audio=null,sequence=0,machineRunning=false;
@@ -144,29 +154,30 @@ function mount(root){
    if(event.phase==='refill'&&el.style.top==='-30%')requestAnimationFrame(()=>{if(elements.has(t.id))el.style.top=target;});else el.style.top=target;
   }
   for(const [id,el] of elements)if(!alive.has(id)){el.remove();elements.delete(id);}
-  q('[data-sweet-total]').innerHTML=(e.totalTenths/10).toFixed(1)+'<span>倍</span>';
+  q('[data-sweet-total]').innerHTML=formatPayout(e.totalHundredths)+'<span>倍</span>';
   q('[data-sweet-count]').textContent=e.processed+' / 8球';
   const phaseNames={ready:'待機中',queued:'入賞待ちに追加',hit:'番号HIT',remove:'消去中',fall:'落下中',link:'LINK成立',refill:'補充中',settled:'処理完了',waiting:'入賞待ち',complete:'結果確定',error:'確認が必要'};
   if(event.phase!=='queued'||!e.busy)q('[data-sweet-phase]').textContent=phaseNames[event.phase]||'';
   q('.sweet-balls').innerHTML=Array.from({length:8},(_,i)=>{const n=[...e.seen][i];return `<span class="${i<e.processed?'done':n?'pending':''}">${n||'·'}</span>`;}).join('');
-  const counts=new Map();for(const h of e.history)counts.set(h.size,(counts.get(h.size)||0)+1);
-  q('[data-sweet-receipt]').innerHTML=counts.size?[...counts].sort((a,b)=>a[0]-b[0]).map(([n,c])=>`<div><span>${n}LINK × ${c}回</span><b>＋${(payoutTenths(n)*c/10).toFixed(1)}倍</b></div>`).join(''):'まだLINKはありません';
-  if(event.phase==='ready')status.textContent=mode==='eight'?'上の「8球抽選を開始」で連動します':'通常の8球抽選モードで遊べます';
+  q('[data-sweet-receipt]').innerHTML=`<div><span>最大 ${e.maxLink}LINK</span><b>基礎 ×${(payoutTenths(e.maxLink)/10).toFixed(1)}</b></div><div><span>最大 ${e.maxChain}連鎖</span><b>×${(chainTenths(e.maxChain)/10).toFixed(1)}</b></div>`;
+  if(event.phase==='ready')status.textContent='3LINKで消去 · 4LINKから基礎配当';
   if(event.phase==='waiting')status.textContent=`${e.queue.length?'次の入賞を処理します':'次の入賞番号を待っています'} · ${source==='demo'?'おためし抽選':'実機シミュレーター連動'}`;
   if(event.phase==='hit'){status.textContent=`${event.ball}球目：${event.number}番 HIT！ 一致する${event.cells.length}マスを消去`;sound(0);}
   if(event.phase==='fall')status.textContent='お菓子が落下中…';
   if(event.phase==='refill')status.textContent='連鎖終了！ 3LINKを作らず100マスへ補充';
   if(event.phase==='link'){
    const cleared=event.clearColors||[];
-   const max=Math.max(...event.groups.map(g=>g.size));sequence++;celebration.dataset.tier=max>=10?'grand':max>=7?'big':'normal';celebration.innerHTML=`<strong>${cleared.length?'COLOR CLEAR!':max+' LINK!'}</strong><span>${event.depth}連鎖　＋${(event.gain/10).toFixed(1)}倍</span>`+Array.from({length:Math.min(45,max*3)},(_,i)=>{const a=i*2.4,d=70+(i%4)*24;return `<i style="--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;--rot:${i*79}deg;background:hsl(${i*47} 85% 75%)"></i>`;}).join('');
+   const max=Math.max(...event.groups.map(g=>g.size));sequence++;celebration.dataset.tier=max>=10?'grand':max>=7?'big':'normal';celebration.innerHTML=`<strong>${cleared.length?'COLOR CLEAR!':max+' LINK!'}</strong><span>${event.depth}連鎖　配当 ${formatPayout(e.totalHundredths)}倍</span>`+Array.from({length:Math.min(45,max*3)},(_,i)=>{const a=i*2.4,d=70+(i%4)*24;return `<i style="--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;--rot:${i*79}deg;background:hsl(${i*47} 85% 75%)"></i>`;}).join('');
    celebration.classList.remove('show');void celebration.offsetWidth;celebration.classList.add('show');boardNode.dataset.tier=celebration.dataset.tier;
    const thisSequence=sequence;setTimeout(()=>{if(sequence===thisSequence){celebration.classList.remove('show');delete boardNode.dataset.tier;}},900);
    status.textContent=(cleared.length?cleared.map(c=>COLORS[c]).join('・')+'の色消し！ ':'')+event.groups.map(g=>`${COLORS[g.color]} ${g.size}LINK`).join(' ＋ ')+` · ${event.depth}連鎖`;sound(max,event.depth);
   }
-  if(event.phase==='complete'){status.textContent=`8球終了！ 合計配当 ${(e.totalTenths/10).toFixed(1)}倍`;q('[data-sweet-demo]').disabled=machineRunning;}
+  if(event.phase==='complete'){status.textContent=`8球終了！ 合計配当 ${formatPayout(e.totalHundredths)}倍`;q('[data-sweet-demo]').disabled=machineRunning;}
   if(event.phase==='error')status.textContent=event.message+'。抽選をリセットしてください';
  }
  engine=new Engine({onEvent:draw});
+ q('[data-sweet-real]').addEventListener('click',()=>{document.querySelector('[data-action="start"]')?.click();});
+ q('[data-sweet-reset]').addEventListener('click',()=>{document.querySelector('[data-action="reset"]')?.click();machineRunning=false;clear();});
  function clear(modeValue=mode){mode=modeValue;source='machine';paused=false;root.classList.remove('sweet-paused');demoToken++;sequence++;celebration.classList.remove('show');engine.reset();q('[data-sweet-demo]').disabled=machineRunning;}
  function start(){demoToken++;source='machine';machineRunning=true;q('[data-sweet-demo]').disabled=true;unlockSound();engine.start();}
  q('[data-sweet-demo]').addEventListener('click',async()=>{
@@ -177,7 +188,7 @@ function mount(root){
   for(const n of nums){if(token!==demoToken)return;engine.enqueue(n);while(!engine.idle&&token===demoToken)await new Promise(r=>setTimeout(r,80));}
  });
  document.addEventListener('visibilitychange',()=>{engine.paused=paused||document.hidden;});
- q('.sweet-mode-note').textContent='通常8球抽選と連動。最初の3球・次の2球も、1球ごとに別々に処理します。';
+ q('.sweet-mode-note').textContent='8球全体の最大記録で配当';
  const api={
   reset:m=>{machineRunning=false;clear(m);q('.sweet-demo-note').textContent='';},
   start:()=>{if(mode==='eight')start();},
@@ -189,7 +200,7 @@ function mount(root){
  };
  root.sweetLink=api;return api;
 }
-const exported={Engine,groups,payoutTenths,mount};
+const exported={Engine,groups,payoutTenths,chainTenths,payoutHundredths,mount};
 if(typeof module!=='undefined'&&module.exports)module.exports=exported;
 else global.SweetLink=exported;
 })(typeof window!=='undefined'?window:globalThis);
