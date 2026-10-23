@@ -1,0 +1,173 @@
+(function(global){
+'use strict';
+const SIZE=10,COLORS=['赤','黄','緑','青','紫'];
+const payoutTenths=n=>n>=4?n-3:0;
+function shuffle(a,random){for(let i=a.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function groups(board){
+ const seen=new Set(),found=[];
+ for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
+  const tile=board[r][c],key=r*SIZE+c;if(!tile||seen.has(key))continue;
+  const cells=[],stack=[[r,c]];seen.add(key);
+  while(stack.length){const [y,x]=stack.pop();cells.push([y,x]);for(const [dy,dx] of [[1,0],[-1,0],[0,1],[0,-1]]){
+   const yy=y+dy,xx=x+dx,k=yy*SIZE+xx;
+   if(yy<0||yy>=SIZE||xx<0||xx>=SIZE||seen.has(k)||!board[yy][xx]||board[yy][xx].color!==tile.color)continue;
+   seen.add(k);stack.push([yy,xx]);
+  }}
+  if(cells.length>=4)found.push({color:tile.color,cells,size:cells.length,tenths:payoutTenths(cells.length)});
+ }
+ return found;
+}
+class Engine{
+ constructor({random=Math.random,onEvent=()=>{},sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),speed=1}={}){
+  this.random=random;this.onEvent=onEvent;this.sleep=sleep;this.speed=speed;this.version=0;this.uid=0;this.reset();
+ }
+ emit(phase,detail={}){this.phase=phase;this.onEvent({phase,...detail},this);}
+ reset(){
+  this.version++;this.queue=[];this.seen=new Set();this.drawn=new Set();this.history=[];this.totalTenths=0;this.processed=0;this.accepted=0;this.busy=false;this.running=false;this.paused=false;
+  this.board=Array.from({length:SIZE},()=>Array(SIZE).fill(null));this.fill(true);this.emit('ready');
+ }
+ start(){this.running=true;this.emit('waiting');}
+ enqueue(number){
+  if(!this.running||!Number.isInteger(number)||number<1||number>25||this.seen.has(number)||this.accepted>=8)return false;
+  this.seen.add(number);this.accepted++;this.queue.push(number);this.emit('queued',{number});if(!this.busy)this.drain();return true;
+ }
+ get idle(){return !this.busy&&!this.queue.length;}
+ async wait(ms,token){
+  let remaining=ms/this.speed;
+  while(remaining>0&&token===this.version){await this.sleep(Math.min(40,remaining));if(!this.paused)remaining-=Math.min(40,remaining);}
+  return token===this.version;
+ }
+ fill(initial=false){
+  const numbers=initial?shuffle(Array.from({length:100},(_,i)=>i%25+1),this.random):null;
+  const pool=Array.from({length:25},(_,i)=>i+1).filter(n=>!this.drawn.has(n));let ni=0;
+  // Existing tiles are stable. Each new tile is checked against its entire
+  // orthogonal component, so L/T-shaped groups cannot appear on refill either.
+  for(let r=SIZE-1;r>=0;r--)for(let c=0;c<SIZE;c++)if(!this.board[r][c]){
+   const tile={id:++this.uid,color:0,number:initial?numbers[ni++]:pool[Math.floor(this.random()*pool.length)]};
+   this.board[r][c]=tile;let valid=false;
+   for(const color of shuffle([0,1,2,3,4],this.random)){
+    tile.color=color;
+    if(!groups(this.board).some(g=>g.cells.some(([y,x])=>y===r&&x===c))){valid=true;break;}
+   }
+   if(!valid)throw new Error('補充する色を決められませんでした');
+  }
+ }
+ gravity(){
+  for(let c=0;c<SIZE;c++){let dest=SIZE-1;for(let r=SIZE-1;r>=0;r--)if(this.board[r][c]){
+   if(dest!==r){this.board[dest][c]=this.board[r][c];this.board[r][c]=null;}dest--;
+  }}
+ }
+ remove(cells){for(const [r,c] of cells)this.board[r][c]=null;}
+ async drain(){
+  const token=this.version;this.busy=true;
+  try{
+   while(this.queue.length&&token===this.version){
+    const number=this.queue.shift(),ball=this.processed+1;let depth=0;this.drawn.add(number);
+    const hit=[];for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++)if(this.board[r][c]?.number===number)hit.push([r,c]);
+    this.emit('hit',{number,ball,cells:hit});if(!await this.wait(420,token))return;
+    this.remove(hit);this.emit('remove',{number,ball});if(!await this.wait(160,token))return;
+    this.gravity();this.emit('fall',{number,ball});if(!await this.wait(380,token))return;
+    let linked=groups(this.board);
+    while(linked.length){
+     depth++;let gain=0;
+     for(const g of linked){this.history.push({ball,number,depth,color:g.color,size:g.size,tenths:g.tenths});gain+=g.tenths;}
+     this.totalTenths+=gain;this.emit('link',{number,ball,depth,groups:linked,gain});
+     if(!await this.wait(550+Math.min(500,Math.max(...linked.map(g=>g.size))-4)*65,token))return;
+     this.remove(linked.flatMap(g=>g.cells));this.emit('remove',{number,ball});if(!await this.wait(150,token))return;
+     this.gravity();this.emit('fall',{number,ball});if(!await this.wait(380,token))return;
+     linked=groups(this.board);
+    }
+    this.fill();this.emit('refill',{number,ball,depth});if(!await this.wait(480,token))return;
+    this.processed++;this.emit('settled',{number,ball,depth});
+   }
+  }catch(error){if(token===this.version){this.running=false;this.queue=[];this.emit('error',{message:error.message});}}
+  finally{if(token===this.version){this.busy=false;if(this.processed===8){this.running=false;this.emit('complete');}else if(this.running)this.emit('waiting');}}
+ }
+}
+
+const SVG=[
+ '<path d="M8 17 Q5 7 18 8 Q31 6 28 17 Q25 29 18 33 Q10 28 8 17" fill="#ff7890"/><path d="M12 9l-2-5 7 3 5-4 1 6" fill="#4dc385"/><g fill="#ffd0b5"><ellipse cx="12" cy="17" rx="1" ry="2"/><ellipse cx="23" cy="16" rx="1" ry="2"/><ellipse cx="18" cy="24" rx="1" ry="2"/></g>',
+ '<path d="M10 10h16l4 18q-12 7-24 0z" fill="#ffe88c"/><path d="M10 10q8-7 16 0l1 4H9z" fill="#bd744c"/><ellipse cx="18" cy="8" rx="8" ry="3" fill="#f6ad61"/>',
+ '<path d="M7 13q11-12 22 0v13q-11 9-22 0z" fill="#9dec9f"/><path d="M8 17h20v6H8z" fill="#f7ffe2"/><path d="M8 12q10-7 20 0" stroke="#d9ffd0" stroke-width="3" fill="none"/>',
+ '<path d="M8 13L2 8v19l7-4m18-10l7-5v19l-7-4" fill="#b6e4ff"/><rect x="8" y="9" width="20" height="20" rx="8" fill="#7bcaff"/><path d="M12 13l11 12m-10 0l10-12" stroke="#dcf6ff" stroke-width="3"/>',
+ '<path d="M7 16q11-20 22 0z" fill="#deb5ff"/><path d="M8 18h20l-3 14H11z" fill="#b18bea"/><path d="M12 21l2 9m5-9v9m5-9l-2 9" stroke="#f3d7ff" stroke-width="2"/><circle cx="18" cy="7" r="3" fill="#ffe0f5"/>'
+];
+function markup(){return `
+ <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>番号で消して、落として、4つつないで。</p></div><div class="sweet-total"><small>合計配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
+ <div class="sweet-layout"><div class="sweet-play"><div class="sweet-balls" aria-label="8球の入賞番号"></div><div class="sweet-board-wrap"><div class="sweet-board" role="img" aria-label="10行10列のお菓子ブロック盤面"></div><div class="sweet-celebration" aria-hidden="true"></div></div><div class="sweet-status" role="status" aria-live="polite"></div></div>
+ <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-demo>盤面だけで8球おためし</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>LINKごとの配当</h3><div class="sweet-odds">${[4,5,6,7,8,9].map(n=>`<span>${n}LINK <b>×${((n-3)/10).toFixed(1)}</b></span>`).join('')}</div><p class="sweet-rule">10LINK以降も1個につき＋0.1倍。<br>連鎖倍率は加えず、すべて合算します。</p><div class="sweet-receipt"><h3>配当の内訳</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が4つ以上つながると消去・配当。連鎖が終わってから100マスへ補充します。</p><p>初期番号は1〜25が各4個。補充番号は、まだ入賞していない番号から選びます。初期配置・補充で4LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
+function mount(root){
+ root.innerHTML=markup();const q=s=>root.querySelector(s),boardNode=q('.sweet-board'),status=q('.sweet-status'),celebration=q('.sweet-celebration');
+ let engine,mode='eight',source='machine',paused=false,demoToken=0,audio=null,sequence=0,machineRunning=false;
+ const elements=new Map();
+ function unlockSound(){try{const AC=global.AudioContext||global.webkitAudioContext;if(AC){audio=audio||new AC();audio.resume()?.catch(()=>{});}}catch{}}
+ function sound(size,depth=1){
+  if(!audio||audio.state!=='running'||!q('[data-sweet-sound]').checked)return;
+  const now=audio.currentTime,count=size?Math.min(12,size+1+Math.min(depth-1,2)):2;
+  for(let i=0;i<count;i++){
+   const o=audio.createOscillator(),g=audio.createGain();o.type=size>=8?'triangle':'sine';
+   o.frequency.value=(size?392:240)*Math.pow(2,([0,4,7,12,16,19,24,28,31,36,40,43][i]+Math.min(depth-1,4)*2)/12);
+   g.gain.setValueAtTime(0,now+i*.055);g.gain.linearRampToValueAtTime(.035,now+i*.055+.008);g.gain.exponentialRampToValueAtTime(.001,now+i*.055+.23);
+   o.connect(g);g.connect(audio.destination);o.start(now+i*.055);o.stop(now+i*.055+.25);
+  }
+ }
+ function draw(event,e){
+  const highlighted=new Set(event.cells?.map(([r,c])=>e.board[r][c]?.id)||[]);
+  if(event.groups)for(const g of event.groups)for(const [r,c] of g.cells)highlighted.add(e.board[r][c]?.id);
+  const alive=new Set();
+  for(let r=0;r<SIZE;r++)for(let c=0;c<SIZE;c++){
+   const t=e.board[r][c];if(!t)continue;alive.add(t.id);let el=elements.get(t.id);
+   if(!el){el=document.createElement('div');el.className='sweet-tile sweet-color-'+t.color;el.innerHTML=`<svg viewBox="0 0 36 36" aria-hidden="true">${SVG[t.color]}</svg><b>${t.number}</b>`;el.setAttribute('aria-label',`${COLORS[t.color]}・${t.number}番`);boardNode.append(el);elements.set(t.id,el);el.style.top=event.phase==='refill'?'-30%':`calc(${r*10}% + 2px)`;}
+   el.style.left=`calc(${c*10}% + 2px)`;el.classList.toggle('sweet-hit',event.phase==='hit'&&highlighted.has(t.id));el.classList.toggle('sweet-link',event.phase==='link'&&highlighted.has(t.id));
+   const target=`calc(${r*10}% + 2px)`;
+   if(event.phase==='refill'&&el.style.top==='-30%')requestAnimationFrame(()=>{if(elements.has(t.id))el.style.top=target;});else el.style.top=target;
+  }
+  for(const [id,el] of elements)if(!alive.has(id)){el.remove();elements.delete(id);}
+  q('[data-sweet-total]').innerHTML=(e.totalTenths/10).toFixed(1)+'<span>倍</span>';
+  q('[data-sweet-count]').textContent=e.processed+' / 8球';
+  const phaseNames={ready:'待機中',queued:'入賞待ちに追加',hit:'番号HIT',remove:'消去中',fall:'落下中',link:'LINK成立',refill:'補充中',settled:'処理完了',waiting:'入賞待ち',complete:'結果確定',error:'確認が必要'};
+  if(event.phase!=='queued'||!e.busy)q('[data-sweet-phase]').textContent=phaseNames[event.phase]||'';
+  q('.sweet-balls').innerHTML=Array.from({length:8},(_,i)=>{const n=[...e.seen][i];return `<span class="${i<e.processed?'done':n?'pending':''}">${n||'·'}</span>`;}).join('');
+  const counts=new Map();for(const h of e.history)counts.set(h.size,(counts.get(h.size)||0)+1);
+  q('[data-sweet-receipt]').innerHTML=counts.size?[...counts].sort((a,b)=>a[0]-b[0]).map(([n,c])=>`<div><span>${n}LINK × ${c}回</span><b>＋${(payoutTenths(n)*c/10).toFixed(1)}倍</b></div>`).join(''):'まだLINKはありません';
+  if(event.phase==='ready')status.textContent=mode==='eight'?'上の「8球抽選を開始」で連動します':'通常の8球抽選モードで遊べます';
+  if(event.phase==='waiting')status.textContent=`${e.queue.length?'次の入賞を処理します':'次の入賞番号を待っています'} · ${source==='demo'?'おためし抽選':'実機シミュレーター連動'}`;
+  if(event.phase==='hit'){status.textContent=`${event.ball}球目：${event.number}番 HIT！ 一致する${event.cells.length}マスを消去`;sound(0);}
+  if(event.phase==='fall')status.textContent='お菓子が落下中…';
+  if(event.phase==='refill')status.textContent='連鎖終了！ 4LINKを作らず100マスへ補充';
+  if(event.phase==='link'){
+   const max=Math.max(...event.groups.map(g=>g.size));sequence++;celebration.dataset.tier=max>=10?'grand':max>=7?'big':'normal';celebration.innerHTML=`<strong>${max} LINK!</strong><span>${event.depth}連鎖　＋${(event.gain/10).toFixed(1)}倍</span>`+Array.from({length:Math.min(45,max*3)},(_,i)=>{const a=i*2.4,d=70+(i%4)*24;return `<i style="--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;--rot:${i*79}deg;background:hsl(${i*47} 85% 75%)"></i>`;}).join('');
+   celebration.classList.remove('show');void celebration.offsetWidth;celebration.classList.add('show');boardNode.dataset.tier=celebration.dataset.tier;
+   const thisSequence=sequence;setTimeout(()=>{if(sequence===thisSequence){celebration.classList.remove('show');delete boardNode.dataset.tier;}},900);
+   status.textContent=event.groups.map(g=>`${COLORS[g.color]} ${g.size}LINK`).join(' ＋ ')+` · ${event.depth}連鎖`;sound(max,event.depth);
+  }
+  if(event.phase==='complete'){status.textContent=`8球終了！ 合計配当 ${(e.totalTenths/10).toFixed(1)}倍`;q('[data-sweet-demo]').disabled=machineRunning;}
+  if(event.phase==='error')status.textContent=event.message+'。抽選をリセットしてください';
+ }
+ engine=new Engine({onEvent:draw});
+ function clear(modeValue=mode){mode=modeValue;source='machine';paused=false;root.classList.remove('sweet-paused');demoToken++;sequence++;celebration.classList.remove('show');engine.reset();q('[data-sweet-demo]').disabled=machineRunning;}
+ function start(){demoToken++;source='machine';machineRunning=true;q('[data-sweet-demo]').disabled=true;unlockSound();engine.start();}
+ q('[data-sweet-demo]').addEventListener('click',async()=>{
+  if(machineRunning)return;
+  clear();source='demo';engine.start();unlockSound();const token=++demoToken;
+  q('[data-sweet-demo]').disabled=true;q('.sweet-demo-note').textContent='おためし：抽選機を使わず、重複しない8番号で盤面を確認します。';
+  const nums=shuffle(Array.from({length:25},(_,i)=>i+1),Math.random).slice(0,8);
+  for(const n of nums){if(token!==demoToken)return;engine.enqueue(n);while(!engine.idle&&token===demoToken)await new Promise(r=>setTimeout(r,80));}
+ });
+ document.addEventListener('visibilitychange',()=>{engine.paused=paused||document.hidden;});
+ q('.sweet-mode-note').textContent='通常8球抽選と連動。最初の3球・次の2球も、1球ごとに別々に処理します。';
+ const api={
+  reset:m=>{machineRunning=false;clear(m);q('.sweet-demo-note').textContent='';},
+  start:()=>{if(mode==='eight')start();},
+  hit:n=>mode==='eight'&&source==='machine'?engine.enqueue(n):false,
+  end:()=>{if(mode!=='eight')return;machineRunning=false;q('[data-sweet-demo]').disabled=!engine.idle;if(engine.processed<8){engine.running=false;status.textContent=`入賞${engine.processed}球で抽選終了。通常8球をリセットして再開できます`; }},
+  pause:v=>{paused=v;engine.paused=v||document.hidden;root.classList.toggle('sweet-paused',v);},
+  get idle(){return source==='demo'||mode!=='eight'||engine.idle;},
+  get engine(){return engine;}
+ };
+ root.sweetLink=api;return api;
+}
+const exported={Engine,groups,payoutTenths,mount};
+if(typeof module!=='undefined'&&module.exports)module.exports=exported;
+else global.SweetLink=exported;
+})(typeof window!=='undefined'?window:globalThis);

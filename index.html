@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja"><head><meta name="theme-color" content="#071623"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="ANIMA 8"><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" sizes="192x192" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>アニマロッタ8 — LITE筐体</title><meta name="description" content="25個のデジタルポケットと緑球の3D抽選シミュレーター。"><style>
+<html lang="ja"><head><meta name="theme-color" content="#071623"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="ANIMA 8"><link rel="stylesheet" href="./candy-game.css"><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" sizes="192x192" href="./icon-192.png"><link rel="apple-touch-icon" href="./icon-192.png"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>アニマロッタ8 — LITE筐体</title><meta name="description" content="25個のデジタルポケットと緑球の3D抽選シミュレーター。"><style>
 #anima8-web-sim{--a8-bg:light-dark(#f4f6f9,#0c1320);--a8-panel:light-dark(#ffffff,#121d2e);--a8-text:light-dark(#142435,#eff7ff);--a8-muted:light-dark(#526477,#9aadc1);--a8-line:light-dark(#d9e1e9,#2a3a4b);--a8-accent:light-dark(#006a77,#89f0df);--a8-accent-text:light-dark(#fff,#092522);font-family:Arial,'Noto Sans JP',sans-serif;color:var(--a8-text);background:var(--a8-bg);border-radius:18px;overflow:hidden;line-height:1.5;color-scheme:light dark;width:100%;box-sizing:border-box}
 #anima8-web-sim *{box-sizing:border-box}
 #anima8-web-sim h2{font-size:26px;margin:0;font-weight:500;letter-spacing:3px;line-height:1.15}
@@ -87,7 +87,7 @@
 #anima8-web-sim .a8-youtube-wrap[hidden],#anima8-web-sim [data-bgm-player][hidden]{display:none}
 </style><style>body{margin:0;padding:16px;background:#0b1220}main{max-width:1440px;margin:auto}@media(max-width:600px){body{padding:0}}</style><style>.linked .a8-controls,.linked .a8-footer{display:none!important}.linked .a8-layout{display:block!important}.linked #anima8-web-sim .a8-stage{height:calc(100vh - 170px);min-height:300px}</style><script>if(location.search.includes("linked"))document.documentElement.classList.add("linked")</script><style>.linked body{padding:0!important;overflow:hidden}.linked .a8-header,.linked .a8-status,.linked .a8-results,.linked .a8-stagehint{display:none!important}.linked #anima8-web-sim .a8-stage{height:100dvh;min-height:0}.linked #anima8-web-sim{border:0;border-radius:0}.linked .a8-viewbar{top:5px;left:5px}.linked .a8-viewbar button{font-size:10px;padding:5px 8px}</style></head><body><main>
 <div id="anima8-web-sim">
- <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v57 · 45°スロープ / 70球JPC</span></header>
+ <header class="a8-header"><div><span class="a8-overline">DIGITAL POCKET SIMULATOR</span><h2>ANIMA <span>8</span></h2></div><span class="a8-version">LITE筐体 v58 · 45°スロープ / 70球JPC</span></header>
  <div class="a8-layout">
   <div class="a8-main">
    <div class="a8-stage" role="group" aria-label="25個のデジタルポケット付き3D抽選機。ドラッグで視点を変更できます。">
@@ -132,7 +132,8 @@
  <footer class="a8-footer">LITE筐体の録画・実機写真を参考に再構成。実機の寸法・物理値は推定です。</footer>
 </div>
 
-</main><script>
+<section id="sweet-link" class="sweet-game" aria-label="おかしの連鎖工房"></section>
+</main><script src="./candy-game.js"></script><script>
 /* Original permissive vendor licenses are in the ZIP and retained here. */
 
 const THREE=(()=>{
@@ -67050,6 +67051,7 @@ function createJpcAudio(root){
 
 const root=document.getElementById('anima8-web-sim');
 const jpcAudio=createJpcAudio(root);
+const candyGame=window.SweetLink.mount(document.getElementById('sweet-link'));
 try{startAnima8();}catch(error){root.querySelector('.a8-loading').textContent='WebGLの起動に失敗しました。Safari / Chromeで開き直すか、ブラウザのグラフィック設定をご確認ください。';console.error(error);}
 
 function startAnima8(){
@@ -67503,14 +67505,15 @@ function startAnima8(){
   if(draw.state==='complete')status.textContent=physics.faults?'抽選終了（一部の球が盤外）':jpc?(jackpotPocket>=0?'JACKPOT！ 全25ポケット入賞':jpcReachPocket()>=0?`JPC終了 · ${jpcReachPocket()+1}番リーチ（24 / 25）`:`70球JPC終了 · ${jpcFilledCount()} / 25 ポケット入賞`):eight?'8球の抽選が終了しました':'連続抽選を停止しました';
   if(draw.state==='draining')status.textContent='投入停止 · 残りのボールを抽選中';
  }
+ draw.canAdvance=()=>candyGame.idle;
  draw.canLaunchJpc=spec=>launchPlanner.ready(draw.next,spec);
  physics.onBallCollision=hit=>{launchPlanner.recordCollision(hit.a);launchPlanner.recordCollision(hit.b);};
  draw.onLaunch=ball=>{if(draw.mode==='jpc')launchPlanner.recordLaunch(ball);addBallView(ball);if(draw.mode==='jpc')jpcAudio.launch(physics.serial);};
- draw.onReset=()=>{launchPlanner.enabled=el('#a8-jpc-aim').checked;launchPlanner.reset();jpcAudio.reset();clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
- draw.onState=state=>{if(state==='running'){slopeStarted=physics.time;if(draw.mode==='jpc')jpcAudio.start();}if(state==='complete'&&draw.mode==='jpc')jpcAudio.complete(jpcFilledCount());if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
- physics.onHit=hit=>{hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){recordJpcHit(hit.pocket-1);launchPlanner.recordHit(hit);updateAimStatus();jpcAudio.hit(jpcFilledCount(),jpcReachPocket());}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
+ draw.onReset=()=>{candyGame.reset(draw.mode);launchPlanner.enabled=el('#a8-jpc-aim').checked;launchPlanner.reset();jpcAudio.reset();clearViews();slopeStarted=physics.time;slopeStopped=0;if(draw.mode!=='eight')restoreContinuousLights();};
+ draw.onState=state=>{if(state==='running'){candyGame.start();slopeStarted=physics.time;if(draw.mode==='jpc')jpcAudio.start();}if(state==='complete'&&draw.mode==='jpc')jpcAudio.complete(jpcFilledCount());if(state==='complete'){candyGame.end();}if(state==='complete')slopeStopped=physics.time-slopeStarted;updateDrawControls();};
+ physics.onHit=hit=>{if(draw.mode==='eight')candyGame.hit(hit.pocket);hitTimes[hit.pocket-1]=physics.time;if(draw.mode==='jpc'){recordJpcHit(hit.pocket-1);launchPlanner.recordHit(hit);updateAimStatus();jpcAudio.hit(jpcFilledCount(),jpcReachPocket());}const span=document.createElement('span');span.className='a8-result';span.textContent=hit.pocket;span.setAttribute('aria-label',`${physics.hits.length}番目の入賞: ${hit.pocket}番`);el('.a8-empty')?.remove();results.append(span);while(results.children.length>60)results.firstElementChild.remove();updatePocketBadge(hit.pocket-1);status.textContent=draw.mode==='jpc'&&jackpotPocket>=0?'JACKPOT！':draw.mode==='jpc'&&jpcReachPocket()>=0?`${jpcReachPocket()+1}番 リーチ！ 残り1ポケット`:`${hit.pocket}番に入賞`;updateCount();};
  physics.onFault=id=>{launchPlanner.recordFault(id);status.textContent=`${id}球目が盤外へ出ました。リセットして調整できます`;};
- function setPaused(value){paused=value;jpcAudio.pause(value);const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
+ function setPaused(value){paused=value;candyGame.pause(value);jpcAudio.pause(value);const b=el('[data-action=pause]');b.textContent=paused?'再開':'一時停止';b.setAttribute('aria-pressed',String(paused));}
  function startOrStop(){if(draw.state==='running'){draw.stop();}else if(draw.state!=='draining'){setPaused(false);draw.start();}}
  all('[data-action]').forEach(button=>button.addEventListener('click',()=>{
   if(button.dataset.action==='start')startOrStop();
