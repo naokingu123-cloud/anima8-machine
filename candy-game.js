@@ -13,7 +13,7 @@ function groups(board){
    if(yy<0||yy>=SIZE||xx<0||xx>=SIZE||seen.has(k)||!board[yy][xx]||board[yy][xx].color!==tile.color)continue;
    seen.add(k);stack.push([yy,xx]);
   }}
-  if(cells.length>=4)found.push({color:tile.color,cells,size:cells.length,tenths:payoutTenths(cells.length)});
+  if(cells.length>=3)found.push({color:tile.color,cells,size:cells.length,tenths:payoutTenths(cells.length)});
  }
  return found;
 }
@@ -93,9 +93,9 @@ const SVG=[
  '<path d="M7 16q11-20 22 0z" fill="#deb5ff"/><path d="M8 18h20l-3 14H11z" fill="#b18bea"/><path d="M12 21l2 9m5-9v9m5-9l-2 9" stroke="#f3d7ff" stroke-width="2"/><circle cx="18" cy="7" r="3" fill="#ffe0f5"/>'
 ];
 function markup(){return `
- <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>番号で消して、落として、4つつないで。</p></div><div class="sweet-total"><small>合計配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
+ <header class="sweet-header"><div><small>SWEET LINK</small><h2>おかしの連鎖工房</h2><p>番号で消して、落として、3つで消して、4つから配当。</p></div><div class="sweet-total"><small>合計配当</small><strong data-sweet-total>0.0<span>倍</span></strong></div></header>
  <div class="sweet-layout"><div class="sweet-play"><div class="sweet-balls" aria-label="8球の入賞番号"></div><div class="sweet-board-wrap"><div class="sweet-board" role="img" aria-label="10行10列のお菓子ブロック盤面"></div><div class="sweet-celebration" aria-hidden="true"></div></div><div class="sweet-status" role="status" aria-live="polite"></div></div>
- <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-demo>盤面だけで8球おためし</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>LINKごとの配当</h3><div class="sweet-odds">${[4,5,6,7,8,9].map(n=>`<span>${n}LINK <b>×${((n-3)/10).toFixed(1)}</b></span>`).join('')}</div><p class="sweet-rule">10LINK以降も1個につき＋0.1倍。<br>連鎖倍率は加えず、すべて合算します。</p><div class="sweet-receipt"><h3>配当の内訳</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が4つ以上つながると消去・配当。連鎖が終わってから100マスへ補充します。</p><p>初期番号は1〜25が各4個。補充番号は、まだ入賞していない番号から選びます。初期配置・補充で4LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
+ <aside class="sweet-info"><div class="sweet-progress"><b data-sweet-count>0 / 8球</b><span data-sweet-phase>待機中</span></div><p class="sweet-mode-note"></p><div class="sweet-buttons"><button type="button" data-sweet-demo>盤面だけで8球おためし</button><label><input type="checkbox" data-sweet-sound checked>効果音</label></div><p class="sweet-demo-note"></p><h3>LINKごとの配当</h3><div class="sweet-odds">${[3,4,5,6,7,8,9].map(n=>`<span>${n}LINK <b>×${((n-3)/10).toFixed(1)}</b></span>`).join('')}</div><p class="sweet-rule">10LINK以降も1個につき＋0.1倍。<br>連鎖倍率は加えず、すべて合算します。</p><div class="sweet-receipt"><h3>配当の内訳</h3><div data-sweet-receipt>まだLINKはありません</div></div><details><summary>あそびかた</summary><p>通常8球の入賞番号に一致するブロックをすべて消します。落下後、上下左右で同色が3つ以上つながると消去。3LINKは配当0倍、4LINKから配当がつきます。連鎖が終わってから100マスへ補充します。</p><p>初期番号は1〜25が各4個。補充番号は、まだ入賞していない番号から選びます。初期配置・補充で3LINK以上は作りません。斜めはつながりません。</p></details></aside></div>`;}
 function mount(root){
  root.innerHTML=markup();const q=s=>root.querySelector(s),boardNode=q('.sweet-board'),status=q('.sweet-status'),celebration=q('.sweet-celebration');
  let engine,mode='eight',source='machine',paused=false,demoToken=0,audio=null,sequence=0,machineRunning=false;
@@ -134,7 +134,7 @@ function mount(root){
   if(event.phase==='waiting')status.textContent=`${e.queue.length?'次の入賞を処理します':'次の入賞番号を待っています'} · ${source==='demo'?'おためし抽選':'実機シミュレーター連動'}`;
   if(event.phase==='hit'){status.textContent=`${event.ball}球目：${event.number}番 HIT！ 一致する${event.cells.length}マスを消去`;sound(0);}
   if(event.phase==='fall')status.textContent='お菓子が落下中…';
-  if(event.phase==='refill')status.textContent='連鎖終了！ 4LINKを作らず100マスへ補充';
+  if(event.phase==='refill')status.textContent='連鎖終了！ 3LINKを作らず100マスへ補充';
   if(event.phase==='link'){
    const max=Math.max(...event.groups.map(g=>g.size));sequence++;celebration.dataset.tier=max>=10?'grand':max>=7?'big':'normal';celebration.innerHTML=`<strong>${max} LINK!</strong><span>${event.depth}連鎖　＋${(event.gain/10).toFixed(1)}倍</span>`+Array.from({length:Math.min(45,max*3)},(_,i)=>{const a=i*2.4,d=70+(i%4)*24;return `<i style="--dx:${Math.cos(a)*d}px;--dy:${Math.sin(a)*d}px;--rot:${i*79}deg;background:hsl(${i*47} 85% 75%)"></i>`;}).join('');
    celebration.classList.remove('show');void celebration.offsetWidth;celebration.classList.add('show');boardNode.dataset.tier=celebration.dataset.tier;

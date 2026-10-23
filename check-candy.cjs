@@ -6,6 +6,8 @@ async function done(e){while(!e.idle)await new Promise(r=>setImmediate(r));}
 function board(){return Array.from({length:10},()=>Array(10).fill(null));}
 function tile(color,number=1){return {id:++seed,color,number};}
 (async()=>{
+ assert.equal(payoutTenths(3),0,'3LINK has no payout');
+ let zero=new Engine(fast);zero.board=board();zero.board[9][0]=tile(0,1);zero.board[9][1]=tile(0,1);zero.board[9][2]=tile(4,25);zero.board[8][2]=tile(0,1);assert.equal(groups(zero.board).length,0);zero.start();zero.enqueue(25);await done(zero);assert.deepEqual(zero.history.map(h=>[h.size,h.tenths]),[[3,0]]);assert.equal(zero.totalTenths,0);assert.equal(groups(zero.board).length,0);
  assert.equal(payoutTenths(4)*3+payoutTenths(5)*4,11,'specified example is exactly 1.1x');
  let b=board();for(let i=0;i<4;i++)b[i][i]=tile(0);assert.equal(groups(b).length,0,'diagonal is not connected');
  b=board();for(const [r,c] of [[0,0],[0,1],[1,1],[2,1],[2,2]])b[r][c]=tile(2);assert.equal(groups(b)[0].size,5);assert.equal(groups(b)[0].tenths,2,'L-shaped component awards once');
@@ -14,13 +16,13 @@ function tile(color,number=1){return {id:++seed,color,number};}
   for(let n=1;n<=25;n++)assert.equal(e.board.flat().filter(t=>t.number===n).length,4);
  }
  const events=[];const e=new Engine({...fast,onEvent:(ev,engine)=>{events.push(ev);if(ev.phase==='refill'){assert.equal(groups(engine.board).length,0,'refill never pays');assert.equal(engine.board.flat().filter(Boolean).length,100);assert(engine.board.flat().every(t=>!engine.drawn.has(t.number)),'new fixture refill uses unprocessed numbers');}}});
- e.board=board();e.board[9][0]=tile(4,25);e.board[9][1]=tile(4,25);
- for(const [r,c] of [[7,0],[8,0],[8,1],[9,2],[9,3]])e.board[r][c]=tile(0,4);
- for(const [r,c] of [[6,0],[7,1],[8,2],[8,3]])e.board[r][c]=tile(3,5);
+ e.board=board();e.board[8][0]=tile(4,25);e.board[9][1]=tile(4,25);
+ for(const [r,c] of [[9,0],[7,0],[8,1]])e.board[r][c]=tile(0,4);
+ for(const [r,c] of [[6,0],[7,1],[9,2]])e.board[r][c]=tile(3,5);
  assert.equal(groups(e.board).length,0);e.start();e.enqueue(25);await done(e);
  assert.equal(e.processed,1);assert.equal(events.find(x=>x.phase==='hit').cells.length,2,'one number removes every matching tile');
- assert.deepEqual(e.history.map(h=>[h.size,h.depth]),[[5,1],[4,2]],'falling causes a real second cascade before refill');
- assert.equal(e.totalTenths,3);assert.equal(events.filter(x=>x.phase==='refill').length,1);
+ assert.deepEqual(e.history.map(h=>[h.size,h.depth,h.tenths]),[[3,1,0],[3,2,0]],'zero-payout clears continue into a second cascade');
+ assert.equal(e.totalTenths,0);assert.equal(events.filter(x=>x.phase==='refill').length,1);
  assert.equal(events.filter(x=>x.phase==='link').length,2);
  for(let trial=0;trial<35;trial++){
   const seen=[];const engine=new Engine({...fast,onEvent:(ev,en)=>{if(ev.phase==='hit')seen.push(ev.number);if(ev.phase==='refill'){assert.equal(groups(en.board).length,0);assert.equal(en.board.flat().filter(Boolean).length,100);}}});
@@ -33,5 +35,5 @@ function tile(color,number=1){return {id:++seed,color,number};}
  const ctx={};vm.createContext(ctx);vm.runInContext(index.slice(index.indexOf('class DrawController{'),index.indexOf('// Lightweight online timing'))+';this.Controller=DrawController;',ctx);
  const physics={settings:{},time:10,active:0,reset(){},launch(){return {};}};const draw=new ctx.Controller(physics);let settled=false;draw.canAdvance=()=>settled;draw.state='running';draw.waiting=true;draw.update();assert.equal(draw.group,0,'3-ball group waits for payout/refill');settled=true;draw.update();assert.equal(draw.group,1,'next 2-ball group starts only after board is stable');
  new vm.Script(fs.readFileSync(__dirname+'/candy-game.js','utf8'));
- console.log('PASS: payout example, 4-neighbor groups, one award per component, 30 initial layouts, true 2-step cascade, no mid-chain refill, 35 full 8-ball games, queued 3+2, no refill links, integer sum, duplicate rejection, reset cancellation, JS syntax');
+ console.log('PASS: 3LINK clear with zero payout, no initial/refill 3LINK, payout example, 4-neighbor groups, one award per component, 30 initial layouts, true 2-step cascade, no mid-chain refill, 35 full 8-ball games, queued 3+2, no refill links, integer sum, duplicate rejection, reset cancellation, JS syntax');
 })().catch(e=>{console.error(e);process.exitCode=1;});
